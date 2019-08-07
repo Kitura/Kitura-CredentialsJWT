@@ -1,5 +1,5 @@
 /**
- * Copyright IBM Corporation 2016, 2017
+ * Copyright IBM Corporation 2019
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -14,9 +14,9 @@
  * limitations under the License.
  **/
 
-// MARK CredentialsGoogleOptions
+// MARK CredentialsJWTOptions
 
-/// A list of options for authentication with Google.
+/// A list of options for authentication with JWT.
 public struct CredentialsJWTOptions {
     /// Determines the JWT claim that will be used for the identity of the user, (default is 'sub').
     public static let subject = "subject"

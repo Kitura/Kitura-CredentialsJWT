@@ -89,7 +89,7 @@ extension JWT: TypeSafeCredentials {
     }
     
     private static var usersCache: NSCache<NSString, JWTCacheElement<T>> {
-        let key = String(reflecting: Self.self)
+        let key = String(reflecting: JWT.self)
         if let usersCache = TypeSafeJWTCache<T>.cacheForType[key] {
             return usersCache
         } else {
@@ -134,13 +134,13 @@ extension JWT: TypeSafeCredentials {
         onSuccess(jwt)
 }
     
-    static func getFromCache(token: String) -> Self? {
+    static func getFromCache(token: String) -> JWT? {
         #if os(Linux)
         let key = NSString(string: token)
         #else
         let key = token as NSString
         #endif
-        guard let cacheElement = Self.usersCache.object(forKey: key) else {
+        guard let cacheElement = JWT.usersCache.object(forKey: key) else {
             Log.debug("Cached token not found: \(token)")
             return nil
         }
@@ -155,13 +155,13 @@ extension JWT: TypeSafeCredentials {
         return cacheElement.userProfile
     }
 
-    static func saveInCache(profile: Self, token: String) {
+    static func saveInCache(profile: JWT, token: String) {
         #if os(Linux)
         let key = NSString(string: token)
         #else
         let key = token as NSString
         #endif
-        Self.usersCache.setObject(JWTCacheElement(profile: profile), forKey: key)
+        JWT.usersCache.setObject(JWTCacheElement(profile: profile), forKey: key)
         Log.debug("Token added to cache: \(token)")
     }
 }

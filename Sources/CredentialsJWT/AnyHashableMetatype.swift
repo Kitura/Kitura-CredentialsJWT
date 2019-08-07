@@ -25,7 +25,13 @@ struct AnyHashableMetatype: Hashable {
         self.base = base
     }
 
+    #if swift(>=4.2)
     func hash(into hasher: inout Hasher) {
         hasher.combine(ObjectIdentifier(base))
     }
+    #else
+    var hashValue: Int {
+        return ObjectIdentifier(base).hashValue
+    }
+    #endif
 }

@@ -24,9 +24,9 @@ let package = Package(
             name: "CredentialsJWT",
             dependencies: ["Credentials", "SwiftJWT"]
         ),
-        .testTarget(
-            name: "CredentialsJWTTests",
-            dependencies: ["CredentialsJWT"]
-        )
+//        .testTarget(
+//            name: "CredentialsJWTTests",
+//            dependencies: ["CredentialsJWT"]
+//        )
     ]
 )

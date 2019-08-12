@@ -27,10 +27,6 @@ Plugin for the Credentials framework that supports authentication using JWTs.
 ## Summary
 Plugin for [Kitura-Credentials](https://github.com/IBM-Swift/Kitura-Credentials) framework that supports authentication using [JSON Web Tokens](https://jwt.io/).
 
-## Table of Contents
-* [Swift version](#swift-version)
-* [License](#license)
-
 ## Swift version
 The latest version of Kitura-CredentialsJWT requires **Swift 4.0** or newer. You can download this version of the Swift binaries by following this [link](https://swift.org/download/). Compatibility with other Swift versions is not guaranteed.
 
@@ -52,7 +48,7 @@ struct MyClaims: Claims {
 let key = "<PrivateKey>".data(using: .utf8)!
 TypeSafeJWT.verifier = .hs256(key: key)
 
-// Use the JWT type as a Type-Safe Middleware to protect a route. The hanlder will only be
+// Use the JWT type as a Type-Safe Middleware to protect a route. The handler will only be
 // invoked if the JWT can be successfully verified, and contains the required claims.
 router.get("/protected") {  (jwt: JWT<MyClaims>, respondWith: (User?, RequestError?) -> Void) in
     // (Decide whether to permit the user access to this resource, based on the JWT claims)

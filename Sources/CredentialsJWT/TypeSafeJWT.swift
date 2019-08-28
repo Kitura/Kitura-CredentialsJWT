@@ -23,7 +23,7 @@ import SwiftJWT
 
 /// The cache element to hold the JWT.
 private class JWTCacheElement<C: Claims> {
-    /// The user profile information stored as `TypeSafeGoogleToken`.
+    /// The user profile information stored as `TypeSafeJWT`.
     var userProfile: JWT<C>
 
     /// The time the UserProfile was originally created
@@ -78,6 +78,7 @@ public struct TypeSafeJWT {
 }
 
 extension JWT: TypeSafeCredentials {
+    
     /// Note: This field does not apply to Type-safe JWT credentials. Use the JWT claims instead.
     public var id: String {
         return "id"
@@ -163,5 +164,10 @@ extension JWT: TypeSafeCredentials {
         #endif
         JWT.usersCache.setObject(JWTCacheElement(profile: profile), forKey: key)
         Log.debug("Token added to cache: \(token)")
+    }
+
+    // Used by tests to clear cache.
+    static func deleteCache() {
+        JWT.usersCache.removeAllObjects()
     }
 }

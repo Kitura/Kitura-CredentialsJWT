@@ -19,15 +19,19 @@ import KituraNet
 import Credentials
 import SwiftJWT
 import Foundation
+import LoggerAPI
 
+// MARK CredentialsJWT
+
+/// Authentication using a JWT.
 public class CredentialsJWT<C: Claims>: CredentialsPluginProtocol {
     
-    public var usersCache: NSCache<NSString, BaseCacheElement>?
-    
+    /// The name of the plugin.
     public var name: String {
         return "JWT"
     }
     
+    /// An indication as to whether the plugin is redirecting or not.
     public var redirecting: Bool {
         return false
     }
@@ -37,26 +41,46 @@ public class CredentialsJWT<C: Claims>: CredentialsPluginProtocol {
     
     private var delegate: UserProfileDelegate?
     
-    private let subjectClaim: String
+    /// Default sub value used in JWT.
+    private let subject: String
     
+    /// User supplies a verifier.
     private let verifier: JWTVerifier
     
+    /// Token variable used after formatting.
     var token = ""
     
+    /// A delegate for `UserProfile` manipulation.
     public var userProfileDelegate: UserProfileDelegate? {
         return delegate
     }
     
-    /// Initialize a `CredentialsGoogleToken` instance.
+    /// Initialize a `CredentialsJWT` instance.
     ///
-    /// - Parameter options: A dictionary of plugin specific options. The keys are defined in `CredentialsGoogleOptions`.
+    /// - Parameter options: A dictionary of plugin specific options. The keys are defined in `CredentialsJWTOptions`.
     public init(verifier: JWTVerifier, options: [String:Any]?=nil, tokenTimeToLive: TimeInterval? = nil) {
         self.verifier = verifier
         delegate = options?[CredentialsJWTOptions.userProfileDelegate] as? UserProfileDelegate
-        subjectClaim = options?[CredentialsJWTOptions.subject] as? String ?? "sub"
+        subject = options?[CredentialsJWTOptions.subject] as? String ?? "sub"
         self.tokenTimeToLive = tokenTimeToLive
     }
     
+    /// User profile cache.
+    public var usersCache: NSCache<NSString, BaseCacheElement>?
+    
+    /// Authenticate incoming request using a JWT.
+    ///
+    /// - Parameter request: The `RouterRequest` object used to get information
+    ///                     about the request.
+    /// - Parameter response: The `RouterResponse` object used to respond to the
+    ///                       request.
+    /// - Parameter options: The dictionary of plugin specific options.
+    /// - Parameter onSuccess: The closure to invoke in the case of successful authentication.
+    /// - Parameter onFailure: The closure to invoke in the case of an authentication failure.
+    /// - Parameter onPass: The closure to invoke when the plugin doesn't recognize the
+    ///                     authentication token in the request.
+    /// - Parameter inProgress: The closure to invoke to cause a redirect to the login page in the
+    ///                     case of redirecting authentication.
     public func authenticate(request: RouterRequest, response: RouterResponse,
                             options: [String:Any], onSuccess: @escaping (UserProfile) -> Void,
                             onFailure: @escaping (HTTPStatusCode?, [String:String]?) -> Void,
@@ -65,7 +89,6 @@ public class CredentialsJWT<C: Claims>: CredentialsPluginProtocol {
         
         if let type = request.headers["X-token-type"], type == name {
             if let rawToken = request.headers["Authorization"] {
-                // TODO: Strip bearer from start if present
                 if rawToken.hasPrefix("Bearer") {
                     let rawTokenParts = rawToken.split(separator: " ", maxSplits: 2)
                     token = String(rawTokenParts[1])
@@ -94,12 +117,66 @@ public class CredentialsJWT<C: Claims>: CredentialsPluginProtocol {
                     
                 }
                 
-                let jwt = try? JWT<C>(jwtString: token, verifier: verifier)
-
-                // TODO: Finish this implementation
+                do {
+                    _ = try JWT<C>(jwtString: token, verifier: verifier)
+                    
+                    let components = token.components(separatedBy: ".")
+                    guard components.count == 2 || components.count == 3,
+                        let claimsData = Data(base64urlEncoded: components[1]),
+                        let dictionary = try? JSONSerialization.jsonObject(with: claimsData, options: []) as? [String:Any]
+                        else {
+                            Log.info("Couldn't decode claims")
+                            return onFailure(nil, nil)
+                    }
+                    guard let userid = dictionary[subject] as? String else {
+                        Log.info("JWT claims dont contain subject")
+                        return onFailure(nil, nil)
+                    }
+                    
+                    let userProfile = UserProfile(id: userid , displayName: userid, provider: "JWT")
+                    
+                    delegate?.update(userProfile: userProfile, from: dictionary)
+                    
+                    let newCacheElement = BaseCacheElement(profile: userProfile)
+        
+                    self.usersCache?.setObject(newCacheElement, forKey: key)
+                    onSuccess(userProfile)
+                } catch {
+                    Log.info("JWT can't be verified: \(error)")
+                    onFailure(nil, nil)
+                }
+                
+            } else {
+                //No Authorization header
+                Log.info("Bad authorization header")
+                onFailure(nil, nil)
             }
+            
+        } else {
+            //Not JWT
+            Log.info("Wasn't a JWT")
+            onPass(nil, nil)
             
         }
     }
     
+}
+
+extension Data {
+    func base64urlEncodedString() -> String {
+        let result = self.base64EncodedString()
+        return result.replacingOccurrences(of: "+", with: "-")
+            .replacingOccurrences(of: "/", with: "_")
+            .replacingOccurrences(of: "=", with: "")
+    }
+    
+    init?(base64urlEncoded: String) {
+        let paddingLength = 4 - base64urlEncoded.count % 4
+        let padding = (paddingLength < 4) ? String(repeating: "=", count: paddingLength) : ""
+        let base64EncodedString = base64urlEncoded
+            .replacingOccurrences(of: "-", with: "+")
+            .replacingOccurrences(of: "_", with: "/")
+            + padding
+        self.init(base64Encoded: base64EncodedString)
+    }
 }

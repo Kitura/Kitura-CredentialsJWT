@@ -29,7 +29,8 @@ class TestTypeSafeJWT : XCTestCase {
     struct TestClaims: Claims, Equatable {
 
         var sub: String
-        
+
+       // Testing requirement: Equatable
         static func == (lhs: TestClaims, rhs: TestClaims) -> Bool {
             return
                 lhs.sub == rhs.sub
@@ -46,7 +47,8 @@ class TestTypeSafeJWT : XCTestCase {
         let accessToken: String
     }
 
-    // Initiliasting the 3 users names and token variables.  The actual String is generated in the setUp function before each test.
+    // Initiliasting the 3 users names and token variables.
+    //The actual String is generated in the setUp function before each test.
 
     var testUser = User(name: "Test")
     var jwtToken = AccessToken(accessToken: "")
@@ -87,9 +89,15 @@ class TestTypeSafeJWT : XCTestCase {
     // setUp function that creates the JWT
     override func setUp() {
         super.setUp()
-        TestTypeSafeJWT.initOnce    
+        TestTypeSafeJWT.initOnce
+
+        //Sets cache size to two for testTwoInCache test.
         TypeSafeJWT.cacheSize = 2
+
+        // Clears cache before every test
         JWT<TestClaims>.deleteCache()
+
+        // User 1 JWT created.
         performServerTest(router: router) { expectation in
             self.performRequest(method: "post", path: "/generatejwt", contentType: "application/json", callback: { response in
                 do {
@@ -97,26 +105,22 @@ class TestTypeSafeJWT : XCTestCase {
                         XCTFail("Couldn't read response")
                         return
                     }
-                    do {
-                        self.jwtToken = try JSONDecoder().decode(AccessToken.self, from: responseData)
-                        self.jwtString = self.jwtToken.accessToken
-                    }
-                    catch {
-                        XCTFail("\(body)")
-                    }
+                    self.jwtToken = try JSONDecoder().decode(AccessToken.self, from: responseData)
+                    self.jwtString = self.jwtToken.accessToken
                 } catch {
-                    XCTFail("Couldn't do JWT")
+                    XCTFail("Failed to decode JSON")
                 }
                 expectation.fulfill()
             }, requestModifier: { request in
                 do {
                     try request.write(from: JSONEncoder().encode(self.testUser))
                 } catch {
-                    XCTFail("Couldn't write")
+                    XCTFail("Failed to send data")
                 }
             })
         }
 
+        // User 2 JWT created.  Users 2 and 3 created for later tests where multiple tokens are needed.
         performServerTest(router: router) { expectation in
             self.performRequest(method: "post", path: "/generatejwt", contentType: "application/json", callback: { response in
                 do {
@@ -132,18 +136,19 @@ class TestTypeSafeJWT : XCTestCase {
                         XCTFail("\(body)")
                     }
                 } catch {
-                    XCTFail("Couldn't do JWT")
+                    XCTFail("Failed to decode JSON")
                 }
                 expectation.fulfill()
             }, requestModifier: { request in
                 do {
                     try request.write(from: JSONEncoder().encode(self.testUser2))
                 } catch {
-                    XCTFail("Couldn't write")
+                    XCTFail("Failed to send data")
                 }
             })
         }
 
+        // User 3 JWT created. Users 2 and 3 created for later tests where multiple tokens are needed.
         performServerTest(router: router) { expectation in
             self.performRequest(method: "post", path: "/generatejwt", contentType: "application/json", callback: { response in
                 do {
@@ -166,32 +171,32 @@ class TestTypeSafeJWT : XCTestCase {
                 do {
                     try request.write(from: JSONEncoder().encode(self.testUser3))
                 } catch {
-                    XCTFail("Couldn't write")
+                    XCTFail("Couldn't send data.")
                 }
             })
         }
 
     }
     
-    
+    // Tests that the pre-constructed JWT type maps correctly to the JWT decoded from
+    // the jwtString earlier defined.
     func testDefaultTokenProfile() {
         do {
-            guard let jwtInstance = try? JWT<TestClaims>(jwtString: jwtString, verifier: .hs256(key: key!)) else {
-            return XCTFail("Google JSON response cannot be decoded to GoogleTokenProfile")
+            guard let profileInstance = try? JWT<TestClaims>(jwtString: jwtString, verifier: .hs256(key: key!)) else {
+            return XCTFail("Failed to generate JWT from given jwt string")
         }
-        let profileInstance = jwtInstance.claims
-        // An equivalent test profile, constructed directly.
-        let testTokenProfile = TestClaims(sub: "Test")
-        XCTAssertEqual(profileInstance, testTokenProfile, "The reference GoogleTokenProfile instance did not match the instance decoded from the Google JSON response")
+            // An equivalent test profile, constructed directly.
+            let testTokenProfile = JWT(claims: TestClaims(sub: "Test"))
+            XCTAssertEqual(profileInstance.claims, testTokenProfile.claims, "The reference JWT instance did not match the instance decoded from the jwt string")
         } catch {
             XCTFail("error")
         }
     }
     
-    // Tests that a profile can be saved and retreived from the cache
+    // Tests that a profile can be saved and retreived from the cache.
     func testCache() {
         guard let jwtInstance = try? JWT<TestClaims>(jwtString: jwtString, verifier: .hs256(key: key!)) else {
-            return XCTFail("Google JSON response cannot be decoded to TestGoogleToken")
+            return XCTFail("Failed to generate JWT from given jwt string")
         }
         let profileInstance = jwtInstance.claims
         JWT<TestClaims>.saveInCache(profile: jwtInstance, token: jwtString)
@@ -199,18 +204,16 @@ class TestTypeSafeJWT : XCTestCase {
             return XCTFail("Failed to get from cache")
         }
         let cacheProfile = cacheJWT.claims
-        XCTAssertEqual(cacheProfile, profileInstance, "retrieved different profile from cache")
+        XCTAssertEqual(cacheProfile, profileInstance, "Retrieved different profile from cache")
     }
 
-    
-    
-    // Tests that two different profiles can be saved and retreived from the cache
+    // Tests that two different profiles can be saved and retreived from the cache.
     func testTwoInCache() {
         guard let profileInstance1 = try? JWT<TestClaims>(jwtString: jwtString, verifier: .hs256(key: key!)) else {
-            return XCTFail("Google JSON response cannot be decoded to TestGoogleToken")
+            return XCTFail("Failed to generate JWT from given jwt string")
         }
         guard let profileInstance2 = try? JWT<TestClaims>(jwtString: jwtString2, verifier: .hs256(key: key!)) else {
-            return XCTFail("Google JSON response cannot be decoded to GoogleTokenProfile")
+            return XCTFail("Failed to generate JWT from given jwt string")
         }
         JWT.saveInCache(profile: profileInstance1, token: jwtString)
         JWT.saveInCache(profile: profileInstance2, token: jwtString2)
@@ -220,29 +223,23 @@ class TestTypeSafeJWT : XCTestCase {
         guard let cacheProfile2 = JWT<TestClaims>.getFromCache(token: jwtString2) else {
             return XCTFail("Failed to get from cache")
         }
-        XCTAssertEqual(cacheProfile1.claims, profileInstance1.claims, "retrieved different profile from cache1")
-        XCTAssertEqual(cacheProfile2.claims, profileInstance2.claims, "retrieved different profile from cache2")
+        XCTAssertEqual(cacheProfile1.claims, profileInstance1.claims, "Retrieved different profile from cache1")
+        XCTAssertEqual(cacheProfile2.claims, profileInstance2.claims, "Retrieved different profile from cache2")
     }
 
     // Tests that a user can set a limit on the size of the token cache. We test that the
     // least-used cache entry is purged from a cache with capacity 2 when a third entry is
     // inserted.
-    // Note that this test uses a separate type (TestGoogleTokenCache instead of
-    // TestGoogleToken) from all other tests, because there is no API for resetting the
-    // token cache on a type, and we do not want this test's behaviour to be influenced by
-    // the execution of previous tests.
-    
-
     func testCacheEviction() {
 
         guard let profileInstance1 = try? JWT<TestClaims>(jwtString: jwtString, verifier: .hs256(key: key!)) else {
-        return XCTFail("Google JSON response cannot be decoded to TestGoogleToken")
+        return XCTFail("Failed to generate JWT from given jwt string")
         }
         guard let profileInstance2 = try? JWT<TestClaims>(jwtString: jwtString2, verifier: .hs256(key: key!)) else {
-        return XCTFail("Google JSON response cannot be decoded to GoogleTokenProfile")
+        return XCTFail("Failed to generate JWT from given jwt string")
         }
         guard let profileInstance3 = try? JWT<TestClaims>(jwtString: jwtString3, verifier: .hs256(key: key!)) else {
-        return XCTFail("Google JSON response cannot be decoded to GoogleTokenProfile")
+        return XCTFail("Failed to generate JWT from given jwt string")
         }
         // Insert two tokens into the cache
         JWT.saveInCache(profile: profileInstance1, token: jwtString)
@@ -266,8 +263,8 @@ class TestTypeSafeJWT : XCTestCase {
         XCTAssertEqual(profileCount, 2, "Expected to retrieve 2 profiles from the cache, but retrieved \(profileCount)")
         }
     
-
-    
+    // Tests that a profile stored in the token cache can be retrieved and returned by a Codable
+    // route that includes this middleware.
     func testCachedProfile() {
         
         var jwt: JWT<TestClaims>
@@ -296,6 +293,9 @@ class TestTypeSafeJWT : XCTestCase {
         }
     }
 
+    // Tests that when a request to a Codable route that includes this middleware does not
+    // contain the matching X-token-type header, the middleware skips authentication and a
+    // second handler is instead invoked.
     func testMissingTokenType() {
         performServerTest(router: router) { expectation in
             self.performRequest(method: "get", path: "/multipleHandlers", callback: {response in
@@ -317,6 +317,9 @@ class TestTypeSafeJWT : XCTestCase {
         }
     }
 
+    // Tests that when a request to a Codable route that includes this middleware contains
+    // the matching X-token-type header, but does not supply an access_token, the middleware
+    // fails authentication and returns unauthorized.
     func testMissingAccessToken() {
         performServerTest(router: router) { expectation in
             self.performRequest(method: "get", path: "/multipleHandlers", callback: {response in
@@ -327,13 +330,11 @@ class TestTypeSafeJWT : XCTestCase {
         }
     }
 
-        
+    // Function that creates the codable routes for the router.
     static func setupCodableRouter() -> Router {
-        
-
         let router = Router()
         
-        // Inside app.postInit()
+        // Route that generates a jwt from a given User's name.
         router.post("/generatejwt") { (user: User, respondWith: (AccessToken?, RequestError?) -> Void) in
             var jwt = JWT(claims: TestClaims(sub: user.name))
             guard let key = "<PrivateKey>".data(using: .utf8),

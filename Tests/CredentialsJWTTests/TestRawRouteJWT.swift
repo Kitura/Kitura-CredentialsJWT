@@ -63,6 +63,8 @@ class TestRawRouteJWT : XCTestCase {
         ("testDefaultTokenProfile", testDefaultTokenProfile),
         ("testCorrectToken", testCorrectToken),
         ("testIncorrectToken", testIncorrectToken),
+        ("testInvalidToken", testInvalidToken),
+        ("testGoogleTokenType", testGoogleTokenType),
         ("testMissingTokenType", testMissingTokenType),
         ("testMissingAccessToken", testMissingAccessToken)
       ]

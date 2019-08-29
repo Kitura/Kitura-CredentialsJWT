@@ -43,13 +43,8 @@ class TestRawRouteJWT : XCTestCase {
         var name: String
     }
 
-    // An AccessToken structure that holds the access token String for the JWT.
-    struct AccessToken: Codable {
-        let accessToken: String
-    }
-
     // Initiliasting the 3 users names and token variables.
-    //The actual String is generated in the setUp function before each test.
+    // The actual String is generated in the setUp function before each test.
 
     var testUser = User(name: "Test")
     var jwtString = ""
@@ -57,13 +52,10 @@ class TestRawRouteJWT : XCTestCase {
     var testUser2 = User(name: "Test2")
     var jwtString2 = ""
 
-    var testUser3 = User(name: "Test3")
-    var jwtString3 = ""
-
     // Key used in generation and decoding of JWT strings.
     let key = "<PrivateKey>".data(using: .utf8)
 
-    // Sets up the codable routes for the tests.
+    // Sets up the raw routes for the tests.
     var router = TestRawRouteJWT.setupRawRouter()
 
     static var allTests : [(String, (TestRawRouteJWT) -> () throws -> Void)] {
@@ -132,31 +124,6 @@ class TestRawRouteJWT : XCTestCase {
                 }
             })
         }
-
-        // User 3 JWT created. Users 2 and 3 created for later tests where multiple tokens are needed.
-        performServerTest(router: router) { expectation in
-            self.performRequest(method: "post", path: "/generaterawjwt", contentType: "application/json", callback: { response in
-                do {
-                    guard let body = try response?.readString() else {
-                        XCTFail("Couldn't read response")
-                        return
-                    }
-                    do {
-                        self.jwtString3 = body
-                    }
-                } catch {
-
-                }
-                expectation.fulfill()
-            }, requestModifier: { request in
-                do {
-                    try request.write(from: JSONEncoder().encode(self.testUser3))
-                } catch {
-                    XCTFail("Couldn't send data")
-                }
-            })
-        }
-
     }
 
     // Tests that the pre-constructed JWT type maps correctly to the JWT decoded from
@@ -174,6 +141,7 @@ class TestRawRouteJWT : XCTestCase {
         }
     }
 
+    // Tests that when a correct token is supplied a valid UserProfile is created.
     func testCorrectToken() {
         performServerTest(router: router) { expectation in
             self.performRequest(method: "get", path: "/rawtokenauth", callback: { response in
@@ -195,6 +163,7 @@ class TestRawRouteJWT : XCTestCase {
         }
     }
 
+    // Tests that when an incorrect token is supplied a valid token but wrong UserProfile is created.
     func testIncorrectToken() {
         performServerTest(router: router) { expectation in
             self.performRequest(method: "get", path: "/rawtokenauth", callback: { response in
@@ -216,6 +185,7 @@ class TestRawRouteJWT : XCTestCase {
         }
     }
 
+    // Tests that when an incorrect token is supplied an invalid token is supplied, user is unauthorized.
     func testInvalidToken() {
             performServerTest(router: router) { expectation in
                 self.performRequest(method: "get", path: "/rawtokenauth", callback: { response in
@@ -226,16 +196,17 @@ class TestRawRouteJWT : XCTestCase {
             }
         }
 
+    // Tests that when a request to a raw route that includes this middleware does not
+    // contain the matching X-token-type header, the middleware skips authentication and the
+    // google handler is instead invoked.
     func testGoogleTokenType() {
-
         let googleToken = "Token Google"
-
         performServerTest(router: router) { expectation in
             self.performRequest(method: "get", path: "/rawtokenauth", callback: { response in
                 XCTAssertNotNil(response, "ERROR!!! ClientRequest response object was nil")
                 XCTAssertEqual(response?.statusCode, HTTPStatusCode.OK, "HTTP Status code was \(String(describing: response?.statusCode))")
                 do {
-                    guard let body = try response?.readString() else {
+                    guard let body = try response?.reasdString() else {
                         XCTFail("No response body")
                         return
                     }
@@ -252,9 +223,9 @@ class TestRawRouteJWT : XCTestCase {
     }
 
 
-    // Tests that when a request to a Codable route that includes this middleware does not
-    // contain the matching X-token-type header, the middleware skips authentication and a
-    // second handler is instead invoked.
+    // Tests that when a request to a raw route that includes this middleware does not
+    // contain an X-token-type header, the middleware skips authentication and a
+    // second handler is instead invoked, after which authorization fails.
     func testMissingTokenType() {
         performServerTest(router: router) { expectation in
             self.performRequest(method: "get", path: "/rawtokenauth", callback: { response in
@@ -265,8 +236,8 @@ class TestRawRouteJWT : XCTestCase {
         }
     }
 
-    // Tests that when a request to a Codable route that includes this middleware contains
-    // the matching X-token-type header, but does not supply an access_token, the middleware
+    // Tests that when a request to a raw route that includes this middleware contains
+    // the matching X-token-type header, but does not supply 'Authorization', the middleware
     // fails authentication and returns unauthorized.
     func testMissingAccessToken() {
         performServerTest(router: router) { expectation in
@@ -278,7 +249,7 @@ class TestRawRouteJWT : XCTestCase {
         }
     }
 
-    // Function that creates the codable routes for the router.
+    // Function that creates the raw routes for the router.
     static func setupRawRouter() -> Router {
         let router = Router()
         let key = "<PrivateKey>".data(using: .utf8)

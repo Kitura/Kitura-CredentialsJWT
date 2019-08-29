@@ -318,7 +318,7 @@ class TestTypeSafeJWT : XCTestCase {
     }
 
     // Tests that when a request to a Codable route that includes this middleware contains
-    // the matching X-token-type header, but does not supply an access_token, the middleware
+    // the matching X-token-type header, but does not supply 'Authorization', the middleware
     // fails authentication and returns unauthorized.
     func testMissingAccessToken() {
         performServerTest(router: router) { expectation in

@@ -114,7 +114,6 @@ public class CredentialsJWT<C: Claims>: CredentialsPluginProtocol {
                         onSuccess(cached.userProfile)
                         return
                     }
-                    
                 }
                 
                 do {

@@ -20,36 +20,18 @@ import LoggerAPI
 import Credentials
 import Foundation
 
-// MARK CredentialsGoogleToken
-
-/// Authentication using Google OAuth token.
+// CLASS TAKEN FROM CREDENTIALS GOOGLE AND USED ONLY IN TESTS.
 public class CredentialsGoogleToken: CredentialsPluginProtocol {
 
     public var usersCache: NSCache<NSString, BaseCacheElement>?
 
-
-    /// The name of the plugin.
     public var name: String {
         return "GoogleToken"
     }
 
-    /// An indication as to whether the plugin is redirecting or not.
     public var redirecting: Bool {
         return false
     }
-    /// Authenticate incoming request using Google OAuth token.
-    ///
-    /// - Parameter request: The `RouterRequest` object used to get information
-    ///                     about the request.
-    /// - Parameter response: The `RouterResponse` object used to respond to the
-    ///                       request.
-    /// - Parameter options: The dictionary of plugin specific options.
-    /// - Parameter onSuccess: The closure to invoke in the case of successful authentication.
-    /// - Parameter onFailure: The closure to invoke in the case of an authentication failure.
-    /// - Parameter onPass: The closure to invoke when the plugin doesn't recognize the
-    ///                     authentication token in the request.
-    /// - Parameter inProgress: The closure to invoke to cause a redirect to the login page in the
-    ///                     case of redirecting authentication.
     public func authenticate(request: RouterRequest, response: RouterResponse,
                              options: [String:Any], onSuccess: @escaping (UserProfile) -> Void,
                              onFailure: @escaping (HTTPStatusCode?, [String:String]?) -> Void,

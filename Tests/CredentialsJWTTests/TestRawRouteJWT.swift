@@ -206,7 +206,7 @@ class TestRawRouteJWT : XCTestCase {
                 XCTAssertNotNil(response, "ERROR!!! ClientRequest response object was nil")
                 XCTAssertEqual(response?.statusCode, HTTPStatusCode.OK, "HTTP Status code was \(String(describing: response?.statusCode))")
                 do {
-                    guard let body = try response?.reasdString() else {
+                    guard let body = try response?.readString() else {
                         XCTFail("No response body")
                         return
                     }

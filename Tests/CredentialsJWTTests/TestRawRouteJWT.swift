@@ -113,7 +113,7 @@ class TestRawRouteJWT : XCTestCase {
         performServerTest(router: router) { expectation in
             self.performRequest(method: "post", path: "/generaterawjwt", contentType: "application/json", callback: { response in
                 do {
-                    guard let body = try response?.readString(), let responseData = body.data(using: .utf8) else {
+                    guard let body = try response?.readString() else {
                         XCTFail("Couldn't read response")
                         return
                     }
@@ -137,7 +137,7 @@ class TestRawRouteJWT : XCTestCase {
         performServerTest(router: router) { expectation in
             self.performRequest(method: "post", path: "/generaterawjwt", contentType: "application/json", callback: { response in
                 do {
-                    guard let body = try response?.readString(), let responseData = body.data(using: .utf8) else {
+                    guard let body = try response?.readString() else {
                         XCTFail("Couldn't read response")
                         return
                     }
@@ -175,26 +175,82 @@ class TestRawRouteJWT : XCTestCase {
     }
 
     func testCorrectToken() {
-
         performServerTest(router: router) { expectation in
             self.performRequest(method: "get", path: "/rawtokenauth", callback: { response in
                 XCTAssertNotNil(response, "ERROR!!! ClientRequest response object was nil")
                 XCTAssertEqual(response?.statusCode, HTTPStatusCode.OK, "HTTP Status code was \(String(describing: response?.statusCode))")
+                do {
+                    guard let body = try response?.readString() else {
+                        XCTFail("No response body")
+                        return
+                    }
+                    let profile = body
+                    let testProfile = UserProfile(id: "Test", displayName: "Test", provider: "JWT")
+                    XCTAssertEqual(profile, testProfile.id)
+                } catch {
+                    XCTFail("Could not decode response: \(error)")
+                }
                 expectation.fulfill()
             }, headers: ["X-Token-Type" : "JWT", "Authorization" : "Bearer " + self.jwtString])
         }
     }
 
     func testIncorrectToken() {
+        performServerTest(router: router) { expectation in
+            self.performRequest(method: "get", path: "/rawtokenauth", callback: { response in
+                XCTAssertNotNil(response, "ERROR!!! ClientRequest response object was nil")
+                XCTAssertEqual(response?.statusCode, HTTPStatusCode.OK, "HTTP Status code was \(String(describing: response?.statusCode))")
+                do {
+                    guard let body = try response?.readString() else {
+                        XCTFail("No response body")
+                        return
+                    }
+                    let profile = body
+                    let testProfile = UserProfile(id: "Test", displayName: "Test", provider: "JWT")
+                    XCTAssertNotEqual(profile, testProfile.id)
+                } catch {
+                    XCTFail("Could not decode response: \(error)")
+                }
+                expectation.fulfill()
+            }, headers: ["X-Token-Type" : "JWT", "Authorization" : "Bearer " + self.jwtString2])
+        }
+    }
+
+    func testInvalidToken() {
+            performServerTest(router: router) { expectation in
+                self.performRequest(method: "get", path: "/rawtokenauth", callback: { response in
+                    XCTAssertNotNil(response, "ERROR!!! ClientRequest response object was nil")
+                    XCTAssertEqual(response?.statusCode, HTTPStatusCode.unauthorized, "HTTP Status code was \(String(describing: response?.statusCode))")
+                    expectation.fulfill()
+                }, headers: ["X-Token-Type" : "JWT", "Authorization" : "Bearer " + "Wrong"])
+            }
+        }
+
+    func testGoogleTokenType() {
+
+        let googleToken = "Token Google"
 
         performServerTest(router: router) { expectation in
             self.performRequest(method: "get", path: "/rawtokenauth", callback: { response in
                 XCTAssertNotNil(response, "ERROR!!! ClientRequest response object was nil")
-                XCTAssertEqual(response?.statusCode, HTTPStatusCode.unauthorized, "HTTP Status code was \(String(describing: response?.statusCode))")
+                XCTAssertEqual(response?.statusCode, HTTPStatusCode.OK, "HTTP Status code was \(String(describing: response?.statusCode))")
+                do {
+                    guard let body = try response?.readString() else {
+                        XCTFail("No response body")
+                        return
+                    }
+                    let profile = body
+                    let testProfile = UserProfile(id: "TestGoogle", displayName: "TestGoogle", provider: "GoogleToken")
+                    XCTAssertEqual(profile, testProfile.id)
+                } catch {
+                    XCTFail("Could not decode response: \(error)")
+                }
                 expectation.fulfill()
-            }, headers: ["X-Token-Type" : "JWT", "Authorization" : "Bearer " + "Wrong"])
+            }, headers: ["X-Token-Type" : "GoogleToken", "access_token" : googleToken])
         }
+
     }
+
 
     // Tests that when a request to a Codable route that includes this middleware does not
     // contain the matching X-token-type header, the middleware skips authentication and a
@@ -230,6 +286,7 @@ class TestRawRouteJWT : XCTestCase {
         let tokenCredentials = Credentials()
 
         tokenCredentials.register(plugin: CredentialsJWT<TestClaims>(verifier: .hs256(key: key!)))
+        tokenCredentials.register(plugin: CredentialsGoogleToken())
 
         router.get("/rawtokenauth", middleware: tokenCredentials)
         router.get("/rawtokenauth") { request, response, next in
@@ -239,7 +296,7 @@ class TestRawRouteJWT : XCTestCase {
                 try response.end()
                 return
             }
-            response.send("\(userProfile)")
+            response.send("\(userProfile.id)")
             next()
         }
 

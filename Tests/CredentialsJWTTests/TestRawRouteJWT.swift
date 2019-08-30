@@ -132,9 +132,7 @@ class TestRawRouteJWT : XCTestCase {
     // the jwtString earlier defined.
     func testDefaultTokenProfile() {
         do {
-            guard let profileInstance = try? JWT<TestClaims>(jwtString: jwtString, verifier: .hs256(key: key!)) else {
-            return XCTFail("Failed to generate JWT from given JWT string")
-        }
+            let profileInstance = try JWT<TestClaims>(jwtString: jwtString, verifier: .hs256(key: key!))
             // An equivalent test profile, constructed directly.
             let testTokenProfile = JWT(claims: TestClaims(sub: "Test"))
             XCTAssertEqual(profileInstance.claims, testTokenProfile.claims, "The reference JWT instance did not match the instance decoded from the jwt string")

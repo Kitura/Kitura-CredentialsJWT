@@ -57,7 +57,9 @@ public class CredentialsJWT<C: Claims>: CredentialsPluginProtocol {
     
     /// Initialize a `CredentialsJWT` instance.
     ///
-    /// - Parameter options: A dictionary of plugin specific options. The keys are defined in `CredentialsJWTOptions`.
+    /// - Parameter options: A dictionary of plugin specific options. The keys are defined in `CredentialsJWTOptions`.   To contain any data
+    ///                      from the claims beyond the subject, a `UserProfileDelegate` should be provided.
+    /// - Parameter subject: The JWT must have a claim that matches this value as it will be treated as the user's identiy in the user profile.
     public init(verifier: JWTVerifier, options: [String:Any]?=nil, tokenTimeToLive: TimeInterval? = nil) {
         self.verifier = verifier
         delegate = options?[CredentialsJWTOptions.userProfileDelegate] as? UserProfileDelegate
@@ -122,13 +124,14 @@ public class CredentialsJWT<C: Claims>: CredentialsPluginProtocol {
                     let components = token.components(separatedBy: ".")
                     guard components.count == 2 || components.count == 3,
                         let claimsData = Data(base64urlEncoded: components[1]),
-                        let dictionary = try? JSONSerialization.jsonObject(with: claimsData, options: []) as? [String:Any]
+                        let optionalDict = try? JSONSerialization.jsonObject(with: claimsData, options: []),
+                        let dictionary = optionalDict as? [String:Any]
                         else {
-                            Log.info("Couldn't decode claims")
+                            Log.error("Couldn't decode claims")
                             return onFailure(nil, nil)
                     }
                     guard let userid = dictionary[subject] as? String else {
-                        Log.info("JWT claims dont contain subject")
+                        Log.warning("Unable to create user profile: JWT claims do not contain '\(subject)'")
                         return onFailure(nil, nil)
                     }
                     
@@ -146,21 +149,20 @@ public class CredentialsJWT<C: Claims>: CredentialsPluginProtocol {
                 }
                 
             } else {
-                //No Authorization header
-                Log.info("Bad authorization header")
+                // No Authorization header
+                Log.debug("Missing authorization header")
                 onFailure(nil, nil)
             }
             
         } else {
-            //Not JWT
-            Log.info("Wasn't a JWT")
             onPass(nil, nil)
-            
         }
     }
     
 }
 
+// This extension is copied from Swift-JWT and provides the base64url encoding that a JWT
+// uses to encode the data.
 extension Data {
     func base64urlEncodedString() -> String {
         let result = self.base64EncodedString()

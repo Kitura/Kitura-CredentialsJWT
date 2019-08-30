@@ -20,6 +20,6 @@ import XCTest
 
 
 XCTMain([
-            testCase(TestTypeSafeJWT.allTests)
-            testCase(TestRawRouteJWT.allTests)
+            testCase(TestTypeSafeJWT.allTests),
+            testCase(TestRawRouteJWT.allTests),
 ])

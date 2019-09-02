@@ -70,7 +70,6 @@ class TestTypeSafeJWT : XCTestCase {
     
     static var allTests : [(String, (TestTypeSafeJWT) -> () throws -> Void)] {
         return [
-        ("testDefaultTokenProfile", testDefaultTokenProfile),
         ("testCache", testCache),
         ("testTwoInCache", testTwoInCache),
         ("testCacheEviction", testCacheEviction),
@@ -176,19 +175,6 @@ class TestTypeSafeJWT : XCTestCase {
             })
         }
 
-    }
-    
-    // Tests that the pre-constructed JWT type maps correctly to the JWT decoded from
-    // the jwtString earlier defined.
-    func testDefaultTokenProfile() {
-        do {
-            let profileInstance = try JWT<TestClaims>(jwtString: jwtString, verifier: .hs256(key: key!))
-            // An equivalent test profile, constructed directly.
-            let testTokenProfile = JWT(claims: TestClaims(sub: "Test"))
-            XCTAssertEqual(profileInstance.claims, testTokenProfile.claims, "The reference JWT instance did not match the instance decoded from the jwt string")
-        } catch {
-            XCTFail("error")
-        }
     }
     
     // Tests that a profile can be saved and retreived from the cache.

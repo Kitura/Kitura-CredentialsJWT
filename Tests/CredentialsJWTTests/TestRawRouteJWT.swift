@@ -21,22 +21,44 @@ import Kitura
 import KituraNet
 import LoggerAPI
 import Credentials
+import Dispatch
 
 @testable import CredentialsJWT
 
-class TestRawRouteJWT : XCTestCase {
 
-    // A claims structure that will be used for the tests.  The `sub` claim holds the users name.
-    struct TestClaims: Claims, Equatable {
+// A claims structure that will be used for the tests.  The `sub` claim holds the users name.
+struct TestClaims: Claims, Equatable {
 
-        var sub: String
+    var sub: String
 
-       // Testing requirement: Equatable
-        static func == (lhs: TestClaims, rhs: TestClaims) -> Bool {
-            return
-                lhs.sub == rhs.sub
-        }
+   // Testing requirement: Equatable
+    static func == (lhs: TestClaims, rhs: TestClaims) -> Bool {
+        return
+            lhs.sub == rhs.sub
     }
+}
+
+// An alternate claims structure that will be used for the tests.  The `username` holds the users name.
+struct TestAlternateClaims: Claims, Equatable {
+
+    var username: String
+
+   // Testing requirement: Equatable
+    static func == (lhs: TestAlternateClaims, rhs: TestAlternateClaims) -> Bool {
+        return
+            lhs.username == rhs.username
+    }
+}
+
+// Sets option for CredentialsJWT to allow username to be used instead of sub, used in the alternate
+// credentials tests.
+let jwtOptions: [String:Any] = [CredentialsJWTOptions.subject: "username"]
+
+// Credentials are set up outside the scope of the class for use within the tests.
+let jwtCredentials = CredentialsJWT<TestClaims>(verifier: .hs256(key: "<PrivateKey>".data(using: .utf8)!), tokenTimeToLive: 1)
+let altCredentials = CredentialsJWT<TestAlternateClaims>(verifier: .hs256(key: "<PrivateKey>".data(using: .utf8)!), options: jwtOptions)
+
+class TestRawRouteJWT : XCTestCase {
 
     // A User structure that can be passed into the generate jwt route.
     struct User: Codable {
@@ -52,6 +74,9 @@ class TestRawRouteJWT : XCTestCase {
     var testUser2 = User(name: "Test2")
     var jwtString2 = ""
 
+    var altUser = User(name: "Alternate")
+    var jwtString3 = ""
+
     // Key used in generation and decoding of JWT strings.
     let key = "<PrivateKey>".data(using: .utf8)
 
@@ -60,11 +85,14 @@ class TestRawRouteJWT : XCTestCase {
 
     static var allTests : [(String, (TestRawRouteJWT) -> () throws -> Void)] {
         return [
-        ("testDefaultTokenProfile", testDefaultTokenProfile),
         ("testCorrectToken", testCorrectToken),
-        ("testIncorrectToken", testIncorrectToken),
+        ("testCorrectToken2", testCorrectToken2),
         ("testInvalidToken", testInvalidToken),
-        ("testGoogleTokenType", testGoogleTokenType),
+        ("testWrongClaims", testWrongClaims),
+        ("testSubjectName", testSubjectName),
+        ("testCacheEntry", testCacheEntry),
+        ("testTokenTimeToLive", testTokenTimeToLive),
+        ("testSkipAuthentication", testSkipAuthentication),
         ("testMissingTokenType", testMissingTokenType),
         ("testMissingAccessToken", testMissingAccessToken)
       ]
@@ -81,17 +109,21 @@ class TestRawRouteJWT : XCTestCase {
         super.setUp()
         TestRawRouteJWT.initOnce
 
+        // Clears cache before every test
+        jwtCredentials.usersCache?.removeAllObjects()
+
         // User 1 JWT created.
         performServerTest(router: router) { expectation in
             self.performRequest(method: "post", path: "/generaterawjwt", contentType: "application/json", callback: { response in
                 do {
                     guard let body = try response?.readString() else {
                         XCTFail("Couldn't read response")
-                        return
+                        return expectation.fulfill()
                     }
                     self.jwtString = body
                 } catch {
-
+                    XCTFail("Couldn't read string from response")
+                    expectation.fulfill()
                 }
                 expectation.fulfill()
             }, requestModifier: { request in
@@ -99,23 +131,23 @@ class TestRawRouteJWT : XCTestCase {
                     try request.write(from: JSONEncoder().encode(self.testUser))
                 } catch {
                     XCTFail("Failed to send data")
+                    expectation.fulfill()
                 }
             })
         }
 
-        // User 2 JWT created.  Users 2 and 3 created for later tests where multiple tokens are needed.
+        // User 2 JWT created.
         performServerTest(router: router) { expectation in
             self.performRequest(method: "post", path: "/generaterawjwt", contentType: "application/json", callback: { response in
                 do {
                     guard let body = try response?.readString() else {
                         XCTFail("Couldn't read response")
-                        return
+                        return expectation.fulfill()
                     }
-                    do {
-                        self.jwtString2 = body
-                    }
+                    self.jwtString2 = body
                 } catch {
-
+                    XCTFail("Couldn't read string from response")
+                    expectation.fulfill()
                 }
                 expectation.fulfill()
             }, requestModifier: { request in
@@ -123,21 +155,33 @@ class TestRawRouteJWT : XCTestCase {
                     try request.write(from: JSONEncoder().encode(self.testUser2))
                 } catch {
                     XCTFail("Failed to send data")
+                    expectation.fulfill()
                 }
             })
         }
-    }
 
-    // Tests that the pre-constructed JWT type maps correctly to the JWT decoded from
-    // the jwtString earlier defined.
-    func testDefaultTokenProfile() {
-        do {
-            let profileInstance = try JWT<TestClaims>(jwtString: jwtString, verifier: .hs256(key: key!))
-            // An equivalent test profile, constructed directly.
-            let testTokenProfile = JWT(claims: TestClaims(sub: "Test"))
-            XCTAssertEqual(profileInstance.claims, testTokenProfile.claims, "The reference JWT instance did not match the instance decoded from the jwt string")
-        } catch {
-            XCTFail("error")
+        // User 3 JWT created. User 3 uses the alternate test claims.
+        performServerTest(router: router) { expectation in
+            self.performRequest(method: "post", path: "/generaterawjwtalt", contentType: "application/json", callback: { response in
+                do {
+                    guard let body = try response?.readString() else {
+                        XCTFail("Couldn't read response")
+                        return expectation.fulfill()
+                    }
+                    self.jwtString3 = body
+                } catch {
+                    XCTFail("Couldn't read string from response")
+                    expectation.fulfill()
+                }
+                expectation.fulfill()
+            }, requestModifier: { request in
+                do {
+                    try request.write(from: JSONEncoder().encode(self.altUser))
+                } catch {
+                    XCTFail("Failed to send data")
+                    expectation.fulfill()
+                }
+            })
         }
     }
 
@@ -150,21 +194,22 @@ class TestRawRouteJWT : XCTestCase {
                 do {
                     guard let body = try response?.readString() else {
                         XCTFail("No response body")
-                        return
+                        return expectation.fulfill()
                     }
                     let profile = body
                     let testProfile = UserProfile(id: "Test", displayName: "Test", provider: "JWT")
                     XCTAssertEqual(profile, testProfile.id)
                 } catch {
                     XCTFail("Could not decode response: \(error)")
+                    expectation.fulfill()
                 }
                 expectation.fulfill()
             }, headers: ["X-Token-Type" : "JWT", "Authorization" : "Bearer " + self.jwtString])
         }
     }
 
-    // Tests that when an incorrect token is supplied a valid token but wrong UserProfile is created.
-    func testIncorrectToken() {
+    // Tests that when a second correct token is supplied a second valid UserProfile is created.
+    func testCorrectToken2() {
         performServerTest(router: router) { expectation in
             self.performRequest(method: "get", path: "/rawtokenauth", callback: { response in
                 XCTAssertNotNil(response, "ERROR!!! ClientRequest response object was nil")
@@ -172,13 +217,14 @@ class TestRawRouteJWT : XCTestCase {
                 do {
                     guard let body = try response?.readString() else {
                         XCTFail("No response body")
-                        return
+                        return expectation.fulfill()
                     }
                     let profile = body
-                    let testProfile = UserProfile(id: "Test", displayName: "Test", provider: "JWT")
-                    XCTAssertNotEqual(profile, testProfile.id)
+                    let testProfile = UserProfile(id: "Test2", displayName: "Test2", provider: "JWT")
+                    XCTAssertEqual(profile, testProfile.id)
                 } catch {
                     XCTFail("Could not decode response: \(error)")
+                    expectation.fulfill()
                 }
                 expectation.fulfill()
             }, headers: ["X-Token-Type" : "JWT", "Authorization" : "Bearer " + self.jwtString2])
@@ -196,10 +242,125 @@ class TestRawRouteJWT : XCTestCase {
             }
         }
 
+    // Tests that when a correct token with the wrong set of claims is supplied, user is unauthorized.
+    func testWrongClaims() {
+            performServerTest(router: router) { expectation in
+                self.performRequest(method: "get", path: "/rawtokenauth", callback: { response in
+                    XCTAssertNotNil(response, "ERROR!!! ClientRequest response object was nil")
+                    XCTAssertEqual(response?.statusCode, HTTPStatusCode.unauthorized, "HTTP Status code was \(String(describing: response?.statusCode))")
+                    expectation.fulfill()
+                }, headers: ["X-Token-Type" : "JWT", "Authorization" : "Bearer " + self.jwtString3])
+            }
+        }
+
+    // Tests that when a correct token is supplied (that does not contain a sub claim) to a
+    // CredentialsJWT instance where the subject option has username instead, that the user is
+    // authorized.
+    func testSubjectName() {
+        performServerTest(router: router) { expectation in
+            self.performRequest(method: "get", path: "/rawtokenauthalt", callback: { response in
+                XCTAssertNotNil(response, "ERROR!!! ClientRequest response object was nil")
+                XCTAssertEqual(response?.statusCode, HTTPStatusCode.OK, "HTTP Status code was \(String(describing: response?.statusCode))")
+                do {
+                    guard let body = try response?.readString() else {
+                        XCTFail("No response body")
+                        return expectation.fulfill()
+                    }
+                    let profile = body
+                    let testProfile = UserProfile(id: "Alternate", displayName: "Alternate", provider: "JWT")
+                    XCTAssertEqual(profile, testProfile.id)
+                } catch {
+                    XCTFail("Could not decode response: \(error)")
+                    expectation.fulfill()
+                }
+                expectation.fulfill()
+            }, headers: ["X-Token-Type" : "JWT", "Authorization" : "Bearer " + self.jwtString3])
+        }
+    }
+
+    // Tests that once a profile has been cached it can be retrieved from the cache and
+    // authorize a user.
+    func testCacheEntry() {
+
+        let userProfile = UserProfile(id: "Cache" , displayName: "Cache", provider: "JWT")
+        #if os(Linux)
+            let key = NSString(string: jwtString)
+        #else
+            let key = jwtString as NSString
+        #endif
+
+        let newCacheElement = BaseCacheElement(profile: userProfile)
+
+        jwtCredentials.usersCache?.setObject(newCacheElement, forKey: key)
+
+        performServerTest(router: router) { expectation in
+            self.performRequest(method: "get", path: "/rawtokenauth", callback: { response in
+                XCTAssertNotNil(response, "ERROR!!! ClientRequest response object was nil")
+                XCTAssertEqual(response?.statusCode, HTTPStatusCode.OK, "HTTP Status code was \(String(describing: response?.statusCode))")
+                do {
+                    guard let body = try response?.readString() else {
+                        XCTFail("No response body")
+                        return expectation.fulfill()
+                    }
+                    let profile = body
+                    let testProfile = UserProfile(id: "Cache", displayName: "Cache", provider: "JWT")
+                    XCTAssertEqual(profile, testProfile.id)
+                } catch {
+                    XCTFail("Could not decode response: \(error)")
+                    expectation.fulfill()
+                }
+                expectation.fulfill()
+            }, headers: ["X-Token-Type" : "JWT", "Authorization" : "Bearer " + self.jwtString])
+        }
+        
+
+    }
+
+    // Tests that once a token has expired it is evicted from the cache, then from using user 1's jwt
+    // that the user is authorized but with the User profile id being "Test" and not "Cache".
+    func testTokenTimeToLive() {
+
+        let userProfile = UserProfile(id: "Cache" , displayName: "Cache", provider: "JWT")
+        #if os(Linux)
+            let key = NSString(string: jwtString)
+        #else
+            let key = jwtString as NSString
+        #endif
+
+        let newCacheElement = BaseCacheElement(profile: userProfile)
+
+        jwtCredentials.usersCache?.setObject(newCacheElement, forKey: key)
+
+        self.performServerTest(router: self.router) { expectation in
+            // Dispatch queue is used to allow 2 seconds to pass before authenticating, meaning
+            // that the token has exceeded its lifespan and has been evicted from the cache.
+            DispatchQueue.main.asyncAfter(deadline: .now() + 2) {
+                self.performRequest(method: "get", path: "/rawtokenauth", callback: { response in
+                    XCTAssertNotNil(response, "ERROR!!! ClientRequest response object was nil")
+                    XCTAssertEqual(response?.statusCode, HTTPStatusCode.OK, "HTTP Status code was \(String(describing: response?.statusCode))")
+                    do {
+                        guard let body = try response?.readString() else {
+                            XCTFail("No response body")
+                            return expectation.fulfill()
+                        }
+                        let profile = body
+                        let testProfile = UserProfile(id: "Test", displayName: "Test", provider: "JWT")
+                        XCTAssertEqual(profile, testProfile.id)
+                    } catch {
+                        XCTFail("Could not decode response: \(error)")
+                        expectation.fulfill()
+                    }
+                    expectation.fulfill()
+                }, headers: ["X-Token-Type" : "JWT", "Authorization" : "Bearer " + self.jwtString])
+            }
+        }
+
+    }
+
     // Tests that when a request to a raw route that includes this middleware does not
     // contain the matching X-token-type header, the middleware skips authentication and the
     // google handler is instead invoked.
-    func testGoogleTokenType() {
+    func testSkipAuthentication() {
         let googleToken = "Token Google"
         performServerTest(router: router) { expectation in
             self.performRequest(method: "get", path: "/rawtokenauth", callback: { response in
@@ -208,20 +369,20 @@ class TestRawRouteJWT : XCTestCase {
                 do {
                     guard let body = try response?.readString() else {
                         XCTFail("No response body")
-                        return
+                        return expectation.fulfill()
                     }
                     let profile = body
                     let testProfile = UserProfile(id: "TestGoogle", displayName: "TestGoogle", provider: "GoogleToken")
                     XCTAssertEqual(profile, testProfile.id)
                 } catch {
                     XCTFail("Could not decode response: \(error)")
+                    expectation.fulfill()
                 }
                 expectation.fulfill()
             }, headers: ["X-Token-Type" : "GoogleToken", "access_token" : googleToken])
         }
 
     }
-
 
     // Tests that when a request to a raw route that includes this middleware does not
     // contain an X-token-type header, the middleware skips authentication and a
@@ -255,12 +416,26 @@ class TestRawRouteJWT : XCTestCase {
         let key = "<PrivateKey>".data(using: .utf8)
         let jwtSigner = JWTSigner.hs256(key: key!)
         let tokenCredentials = Credentials()
+        let altTokenCredentials = Credentials()
 
-        tokenCredentials.register(plugin: CredentialsJWT<TestClaims>(verifier: .hs256(key: key!)))
+        tokenCredentials.register(plugin: jwtCredentials)
         tokenCredentials.register(plugin: CredentialsGoogleToken())
+        altTokenCredentials.register(plugin: altCredentials)
 
         router.get("/rawtokenauth", middleware: tokenCredentials)
         router.get("/rawtokenauth") { request, response, next in
+            guard let userProfile = request.userProfile else {
+                Log.verbose("Failed raw token authentication")
+                response.status(.unauthorized)
+                try response.end()
+                return
+            }
+            response.send("\(userProfile.id)")
+            next()
+        }
+
+        router.get("/rawtokenauthalt", middleware: altTokenCredentials)
+        router.get("/rawtokenauthalt") { request, response, next in
             guard let userProfile = request.userProfile else {
                 Log.verbose("Failed raw token authentication")
                 response.status(.unauthorized)
@@ -276,6 +451,17 @@ class TestRawRouteJWT : XCTestCase {
             let credentials = try request.read(as: User.self)
             // Users credentials are authenticated
             let myClaims = TestClaims(sub: credentials.name)
+            var myJWT = JWT(claims: myClaims)
+            let signedJWT = try myJWT.sign(using: jwtSigner)
+            response.send(signedJWT)
+            next()
+        }
+
+        // Route that generates a jwt from a given User's name.
+        router.post("/generaterawjwtalt") { request, response, next in
+            let credentials = try request.read(as: User.self)
+            // Users credentials are authenticated
+            let myClaims = TestAlternateClaims(username: credentials.name)
             var myJWT = JWT(claims: myClaims)
             let signedJWT = try myJWT.sign(using: jwtSigner)
             response.send(signedJWT)

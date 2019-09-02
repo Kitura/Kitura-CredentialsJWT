@@ -55,11 +55,21 @@ public class CredentialsJWT<C: Claims>: CredentialsPluginProtocol {
         return delegate
     }
     
-    /// Initialize a `CredentialsJWT` instance.
+    /// Initialize a `CredentialsJWT` instance.  Upon first receipt, a JWT will be verified to ensure the signature is valid,
+    /// and that the JWT's claims can be decoded into an instance of your `Claims` type. The claims are used to generate
+    /// a `UserProfile`.  The profile will be cached against the token, so that future receipts of the same token are more
+    /// efficient.  The time a token is cached for can be configured.
     ///
-    /// - Parameter options: A dictionary of plugin specific options. The keys are defined in `CredentialsJWTOptions`.   To contain any data
-    ///                      from the claims beyond the subject, a `UserProfileDelegate` should be provided.
-    /// - Parameter subject: The JWT must have a claim that matches this value as it will be treated as the user's identiy in the user profile.
+    /// One claim (by default, `sub`) will be considered the 'identity' of the bearer, and will be used to populate the
+    /// `id` and `displayName` properties of the profile.  This claim can be customized by setting the `subject` option
+    /// to the name of the appropriate claim in your `Claims`.
+    ///
+    /// If you require additional claims to appear as properties of the profile, supply the `userProfileDelegate` option.
+    /// The `UserProfileDelegate` will be given a dictionary containing the claims of the JWT from which it can populate
+    /// the profile.
+    /// - Parameter verifier: Determines the key and algorithm used to verify the received JWT.
+    /// - Parameter options: A dictionary of plugin specific options. The keys are defined in `CredentialsJWTOptions`.
+    /// - Parameter tokenTimeToLive: How long the token should remain cached (in seconds).  The default is `nil`, which means the token will be cached indefinitely.
     public init(verifier: JWTVerifier, options: [String:Any]?=nil, tokenTimeToLive: TimeInterval? = nil) {
         self.verifier = verifier
         delegate = options?[CredentialsJWTOptions.userProfileDelegate] as? UserProfileDelegate

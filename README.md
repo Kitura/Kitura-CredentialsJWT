@@ -22,13 +22,91 @@
 
 # Kitura-CredentialsJWT
 
-Plugin for the Credentials framework that supports authentication using JWTs.
+A package enabling Kitura to authenticate users using [JSON Web Tokens](https://jwt.io/).
 
 ## Summary
-Plugin for [Kitura-Credentials](https://github.com/IBM-Swift/Kitura-Credentials) framework that supports authentication using [JSON Web Tokens](https://jwt.io/).
+
+This package provides two facilities:
+- `CredentialsJWT`: A plugin for the [Kitura-Credentials](https://github.com/IBM-Swift/Kitura-Credentials) framework that supports JWT (token-based) authentication,
+- A `TypeSafeMiddleware` extension for the `JWT` type, enabling it to be used as authentication for Codable routes.
 
 ## Swift version
 The latest version of Kitura-CredentialsJWT requires **Swift 4.0** or newer. You can download this version of the Swift binaries by following this [link](https://swift.org/download/). Compatibility with other Swift versions is not guaranteed.
+
+## Using the `CredentialsJWT` plugin
+
+This plugin requires that the following HTTP headers are present on a request:
+- `X-token-type`: must be `JWT`
+- `Authorization`: the JWT string, optionally prefixed with `Bearer`.
+
+The [Swift-JWT](https://github.com/IBM-Swift/Swift-JWT) library is used to decode the token supplied in the Authorization header. To successfully decode it, you must specify the `Claims` that will be present in the JWT.
+
+One claim (by default, `sub`) will be used to represent the identity of the bearer.  You can choose a different claim by supplying the `subject` option when creating an instance of CredentialsJWT, and you can further customize the resulting `UserProfile` by defining a `UserProfileDelegate`.
+
+### Usage Example
+
+To use `CredentialsJWT` using the default options:
+```swift
+import Credentials
+import CredentialsJWT
+import SwiftJWT
+
+// Defines the claims that must be present in a JWT.
+struct MyClaims: Claims {
+    let sub: String
+}
+
+// Defines the method used to verify the signature of a JWT.
+let jwtVerifier = .hs256(key: "<PrivateKey>".data(using: .utf8)!)
+
+// Create a CredentialsJWT plugin with default options.
+let jwtCredentials = CredentialsJWT<MyClaims>(verifier: jwtVerifier)
+
+let authenticationMiddleware = Credentials()
+authenticationMiddleware.register(plugin: jwtCredentials)
+router.get("/myProtectedRoute", middleware: authenticationMiddleware)
+```
+
+Following successful authentication, the `UserProfile` will be minimally populated with the two required fields - `id` and `displayName` - both with the value of the JWT's `sub` claim.  The `provider` will be set to `JWT`.
+
+### Usage Example - custom claims
+
+To customize the name of the identity claim, and further populate the UserProfile fields, specify the `subject` and `userProfileDelegate` options as follows:
+```swift
+import Credentials
+import CredentialsJWT
+import SwiftJWT
+
+// Defines the claims that must be present in a JWT.
+struct MyClaims: Claims {
+    let id: Int
+    let fullName: String
+    let email: String
+}
+
+struct MyDelegate: UserProfileDelegate {
+    func update(userProfile: UserProfile, from dictionary: [String:Any]) {
+        // `userProfile.id` already contains `id`
+        userProfile.displayName = dictionary["fullName"]! as! String
+        let email = UserProfile.UserProfileEmail(value: dictionary["email"]! as! String, type: "home")
+        userProfile.emails = [email]
+    }
+}
+
+// Defines the method used to verify the signature of a JWT.
+let jwtVerifier = .hs256(key: "<PrivateKey>".data(using: .utf8)!)
+
+// Create a CredentialsJWT plugin with default options.
+let jwtCredentials = CredentialsJWT<MyClaims>(verifier: jwtVerifier, options: [CredentialsJWTOptions.subject: "id", CredentialsJWTOptions.userProfileDelegate: MyDelegate])
+
+let authenticationMiddleware = Credentials()
+authenticationMiddleware.register(plugin: jwtCredentials)
+router.get("/myProtectedRoute", middleware: authenticationMiddleware)
+```
+Following successful authentication, the `UserProfile` will be populated as follows:
+- `id`: the `id` claim (converted to a String),
+- `displayName`: the `fullName` claim,
+- `emails`: an array with a single element, representing the `email` claim.
 
 ## Example of JWT authentication for Codable routes
 

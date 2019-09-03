@@ -23,20 +23,104 @@ import LoggerAPI
 
 // MARK CredentialsJWT
 
-/// Authentication using a JWT.
+/**
+ A plugin for Kitura-Credentials supporting authentication using [JSON Web Tokens](https://jwt.io/).
+
+ This plugin requires that the following HTTP headers are present on a request:
+ - `X-token-type`: must be `JWT`
+ - `Authorization`: the JWT string, optionally prefixed with `Bearer`.
+
+ The [Swift-JWT](https://github.com/IBM-Swift/Swift-JWT) library is used to
+ decode JWT strings. To successfully decode it, you must specify the `Claims` that will
+ be present in the JWT.  One claim (by default, `sub`) will be used to represent the identity of
+ the bearer.  You can choose a different claim by supplying the `subject` option when
+ creating an instance of CredentialsJWT, and you can further customize the resulting `UserProfile`
+ by defining a `UserProfileDelegate`.
+
+ ### Usage Example
+
+ To use `CredentialsJWT` using the default options:
+ ```swift
+ import Credentials
+ import CredentialsJWT
+ import SwiftJWT
+
+ // Defines the claims that must be present in a JWT.
+ struct MyClaims: Claims {
+     let sub: String
+ }
+
+ // Defines the method used to verify the signature of a JWT.
+ let jwtVerifier = .hs256(key: "<PrivateKey>".data(using: .utf8)!)
+
+ // Create a CredentialsJWT plugin with default options.
+ let jwtCredentials = CredentialsJWT<MyClaims>(verifier: jwtVerifier)
+
+ let authenticationMiddleware = Credentials()
+ authenticationMiddleware.register(plugin: jwtCredentials)
+ router.get("/myProtectedRoute", middleware: authenticationMiddleware)
+ ```
+
+ Following successful authentication, the `UserProfile` will be minimally populated with the
+ two required fields - `id` and `displayName` - both with the value of the JWT's `sub` claim.
+ The `provider` will be set to `JWT`.
+
+ ### Usage Example - custom claims
+
+ To customize the name of the identity claim, and further populate the UserProfile fields,
+ specify the `subject` and `userProfileDelegate` options as follows:
+ ```swift
+ import Credentials
+ import CredentialsJWT
+ import SwiftJWT
+
+ // Defines the claims that must be present in a JWT.
+ struct MyClaims: Claims {
+     let id: Int
+     let fullName: String
+     let email: String
+ }
+
+ struct MyDelegate: UserProfileDelegate {
+     func update(userProfile: UserProfile, from dictionary: [String:Any]) {
+         // `userProfile.id` already contains `id`
+         userProfile.displayName = dictionary["fullName"]! as! String
+         let email = UserProfile.UserProfileEmail(value: dictionary["email"]! as! String, type: "home")
+         userProfile.emails = [email]
+     }
+ }
+
+ // Defines the method used to verify the signature of a JWT.
+ let jwtVerifier = .hs256(key: "<PrivateKey>".data(using: .utf8)!)
+
+ // Create a CredentialsJWT plugin with default options.
+ let jwtCredentials = CredentialsJWT<MyClaims>(verifier: jwtVerifier, options: [CredentialsJWTOptions.subject: "id", CredentialsJWTOptions.userProfileDelegate: MyDelegate])
+
+ let authenticationMiddleware = Credentials()
+ authenticationMiddleware.register(plugin: jwtCredentials)
+ router.get("/myProtectedRoute", middleware: authenticationMiddleware)
+ ```
+ Following successful authentication, the `UserProfile` will be populated as follows:
+ - `id`: the `id` claim (converted to a String),
+ - `displayName`: the `fullName` claim,
+ - `emails`: an array with a single element, representing the `email` claim.
+*/
 public class CredentialsJWT<C: Claims>: CredentialsPluginProtocol {
     
-    /// The name of the plugin.
+    /// The name of the plugin: `JWT`.
     public var name: String {
         return "JWT"
     }
     
-    /// An indication as to whether the plugin is redirecting or not.
+    /// An indication as to whether the plugin is redirecting or not.  This plugin is not redirecting.
     public var redirecting: Bool {
         return false
     }
     
-    /// The time in seconds since the user profile was generated that the access token will be considered valid.
+    /// The time in seconds since the user profile was generated that the access token will be considered valid
+    /// and remain in the `usersCache`.
+    ///
+    /// By default, this value is `nil`, which means that tokens will be cached indefinitely.
     public let tokenTimeToLive: TimeInterval?
     
     private var delegate: UserProfileDelegate?
@@ -50,7 +134,10 @@ public class CredentialsJWT<C: Claims>: CredentialsPluginProtocol {
     /// Token variable used after formatting.
     var token = ""
     
-    /// A delegate for `UserProfile` manipulation.
+    /// A delegate for `UserProfile` manipulation. Use this to further populate the profile using
+    /// any fields from the `Claims` that you have defined.
+    ///
+    /// This field can be set by passing the `userProfileDelegate` option during initialization.
     public var userProfileDelegate: UserProfileDelegate? {
         return delegate
     }

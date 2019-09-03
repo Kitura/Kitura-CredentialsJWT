@@ -26,7 +26,8 @@ import Dispatch
 @testable import CredentialsJWT
 
 
-// A claims structure that will be used for the tests.  The `sub` claim holds the users name.
+// A claims structure that will be used for the tests.
+// The `sub` claim holds the user's identity.
 struct TestClaims: Claims, Equatable {
 
     var sub: String
@@ -38,7 +39,8 @@ struct TestClaims: Claims, Equatable {
     }
 }
 
-// An alternate claims structure that will be used for the tests.  The `username` holds the users name.
+// An alternate claims structure that will be used for the tests.
+// The `username` holds the user's identity.
 struct TestAlternateClaims: Claims, Equatable {
 
     var username: String
@@ -50,6 +52,32 @@ struct TestAlternateClaims: Claims, Equatable {
     }
 }
 
+// A claims structure containing custom claims that should be extracted as part of the
+// UserProfile. The `id` holds the user's identity.
+struct TestDelegateClaims: Claims, Equatable {
+    let id: Int
+    let fullName: String
+    let email: String
+
+    // Testing requirement: Equatable
+     static func == (lhs: TestDelegateClaims, rhs: TestDelegateClaims) -> Bool {
+         return
+            lhs.id == rhs.id && lhs.fullName == rhs.fullName && lhs.email == rhs.email
+     }
+}
+
+// A UserProfileDelegate for the route accessed in testDelegateToken. Custom claims
+// 'fullName' and 'email' are applied to the UserProfile 'displayName' and 'emails'
+// fields.
+struct MyDelegate: UserProfileDelegate {
+    func update(userProfile: UserProfile, from dictionary: [String:Any]) {
+        // `userProfile.id` already contains `id`
+        userProfile.displayName = dictionary["fullName"]! as! String
+        let email = UserProfile.UserProfileEmail(value: dictionary["email"]! as! String, type: "home")
+        userProfile.emails = [email]
+    }
+}
+
 // Sets option for CredentialsJWT to allow username to be used instead of sub, used in the alternate
 // credentials tests.
 let jwtOptions: [String:Any] = [CredentialsJWTOptions.subject: "username"]
@@ -58,11 +86,21 @@ let jwtOptions: [String:Any] = [CredentialsJWTOptions.subject: "username"]
 let jwtCredentials = CredentialsJWT<TestClaims>(verifier: .hs256(key: "<PrivateKey>".data(using: .utf8)!), tokenTimeToLive: 1)
 let altCredentials = CredentialsJWT<TestAlternateClaims>(verifier: .hs256(key: "<PrivateKey>".data(using: .utf8)!), options: jwtOptions)
 
+// Sets options for CredentialsJWT to perform UserProfile manipulation using
+// a delegate, making use of custom Claims.
+let delegateOptions: [String:Any] = [CredentialsJWTOptions.subject: "id", CredentialsJWTOptions.userProfileDelegate: MyDelegate()]
+let delegateCredentials = CredentialsJWT<TestDelegateClaims>(verifier: .hs256(key: "<PrivateKey>".data(using: .utf8)!), options: delegateOptions)
+
 class TestRawRouteJWT : XCTestCase {
 
     // A User structure that can be passed into the generate jwt route.
     struct User: Codable {
-        var name: String
+        let name: String
+        let email: String?
+        init(name: String, email: String? = nil) {
+            self.name = name
+            self.email = email
+        }
     }
 
     // Initiliasting the 3 users names and token variables.
@@ -76,6 +114,9 @@ class TestRawRouteJWT : XCTestCase {
 
     var altUser = User(name: "Alternate")
     var jwtString3 = ""
+
+    var delegateUser = User(name: "Mr Delegate", email: "mr_delegate@foo.xyz")
+    var jwtString4 = ""
 
     // Key used in generation and decoding of JWT strings.
     let key = "<PrivateKey>".data(using: .utf8)
@@ -183,6 +224,31 @@ class TestRawRouteJWT : XCTestCase {
                 }
             })
         }
+
+        // User 4 JWT created. User 4 uses the delegate test claims.
+        performServerTest(router: router) { expectation in
+            self.performRequest(method: "post", path: "/generateRawJwtDelegate", contentType: "application/json", callback: { response in
+                do {
+                    guard let body = try response?.readString() else {
+                        XCTFail("Couldn't read response")
+                        return expectation.fulfill()
+                    }
+                    self.jwtString4 = body
+                    print(self.jwtString4)
+                } catch {
+                    XCTFail("Couldn't read string from response")
+                    expectation.fulfill()
+                }
+                expectation.fulfill()
+            }, requestModifier: { request in
+                do {
+                    try request.write(from: JSONEncoder().encode(self.delegateUser))
+                } catch {
+                    XCTFail("Failed to send data")
+                    expectation.fulfill()
+                }
+            })
+        }
     }
 
     // Tests that when a correct token is supplied a valid UserProfile is created.
@@ -228,6 +294,32 @@ class TestRawRouteJWT : XCTestCase {
                 }
                 expectation.fulfill()
             }, headers: ["X-Token-Type" : "JWT", "Authorization" : "Bearer " + self.jwtString2])
+        }
+    }
+
+    // Tests that when a JWT is supplied that contains custom claims, to a route
+    // whose CredentialsJWT is configured with a suitable delegate, the profile
+    // contains the values of those custom claims (fullName and email).
+    func testDelegateToken() {
+        performServerTest(router: router) { expectation in
+            self.performRequest(method: "get", path: "/rawTokenAuthDelegate", callback: { response in
+                XCTAssertNotNil(response, "ERROR!!! ClientRequest response object was nil")
+                XCTAssertEqual(response?.statusCode, HTTPStatusCode.OK, "HTTP Status code was \(String(describing: response?.statusCode))")
+                do {
+                    guard let body = try response?.readString() else {
+                        XCTFail("No response body")
+                        return expectation.fulfill()
+                    }
+                    let profile = body
+                    let expectedProfile = "Mr Delegate,mr_delegate@foo.xyz"
+                    XCTAssertEqual(profile, expectedProfile)
+                    //TODO
+                } catch {
+                    XCTFail("Could not decode response: \(error)")
+                    expectation.fulfill()
+                }
+                expectation.fulfill()
+            }, headers: ["X-Token-Type" : "JWT", "Authorization" : "Bearer " + self.jwtString4])
         }
     }
 
@@ -417,10 +509,12 @@ class TestRawRouteJWT : XCTestCase {
         let jwtSigner = JWTSigner.hs256(key: key!)
         let tokenCredentials = Credentials()
         let altTokenCredentials = Credentials()
+        let delegateTokenCredentials = Credentials()
 
         tokenCredentials.register(plugin: jwtCredentials)
         tokenCredentials.register(plugin: CredentialsGoogleToken())
         altTokenCredentials.register(plugin: altCredentials)
+        delegateTokenCredentials.register(plugin: delegateCredentials)
 
         router.get("/rawtokenauth", middleware: tokenCredentials)
         router.get("/rawtokenauth") { request, response, next in
@@ -446,6 +540,20 @@ class TestRawRouteJWT : XCTestCase {
             next()
         }
 
+        router.get("/rawTokenAuthDelegate", middleware: delegateTokenCredentials)
+        router.get("/rawTokenAuthDelegate") { request, response, next in
+            guard let userProfile = request.userProfile else {
+                Log.verbose("Failed raw token authentication")
+                return try response.status(.unauthorized).end()
+            }
+            guard let email = userProfile.emails?.first?.value else {
+                Log.verbose("UserProfile e-mail was not populated")
+                return try response.status(.unauthorized).end()
+            }
+            response.send("\(userProfile.displayName),\(email)")
+            next()
+        }
+
         // Route that generates a jwt from a given User's name.
         router.post("/generaterawjwt") { request, response, next in
             let credentials = try request.read(as: User.self)
@@ -462,6 +570,17 @@ class TestRawRouteJWT : XCTestCase {
             let credentials = try request.read(as: User.self)
             // Users credentials are authenticated
             let myClaims = TestAlternateClaims(username: credentials.name)
+            var myJWT = JWT(claims: myClaims)
+            let signedJWT = try myJWT.sign(using: jwtSigner)
+            response.send(signedJWT)
+            next()
+        }
+
+        // Route that generates a jwt from a given User's name.
+        router.post("/generateRawJwtDelegate") { request, response, next in
+            let credentials = try request.read(as: User.self)
+            // Users credentials are authenticated
+            let myClaims = TestDelegateClaims(id: 123, fullName: credentials.name, email: credentials.email!)
             var myJWT = JWT(claims: myClaims)
             let signedJWT = try myJWT.sign(using: jwtSigner)
             response.send(signedJWT)

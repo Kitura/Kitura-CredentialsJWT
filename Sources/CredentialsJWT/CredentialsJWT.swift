@@ -140,11 +140,13 @@ public class CredentialsJWT<C: Claims>: CredentialsPluginProtocol {
                             Log.error("Couldn't decode claims")
                             return onFailure(nil, nil)
                     }
-                    guard let userid = dictionary[subject] as? String else {
+                    // Ensure claims contain the expected subject claim (default `sub`)
+                    guard let subjectClaim = dictionary[subject] else {
                         Log.warning("Unable to create user profile: JWT claims do not contain '\(subject)'")
                         return onFailure(nil, nil)
                     }
-                    
+                    // Convert subject claim value to a String
+                    let userid = String("\(subjectClaim)")
                     let userProfile = UserProfile(id: userid , displayName: userid, provider: "JWT")
                     
                     delegate?.update(userProfile: userProfile, from: dictionary)

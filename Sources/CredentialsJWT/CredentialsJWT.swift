@@ -27,8 +27,10 @@ import LoggerAPI
  A plugin for Kitura-Credentials supporting authentication using [JSON Web Tokens](https://jwt.io/).
 
  This plugin requires that the following HTTP headers are present on a request:
- - `X-token-type`: must be `JWT`
- - `Authorization`: the JWT string, optionally prefixed with `Bearer`.
+ - `Authorization`: the JWT string, optionally prefixed with `Bearer`
+
+ If you wish to use multiple Credentials plugins, then additionally the header:
+ - `X-token-type`: must equal `JWT`.
 
  The [Swift-JWT](https://github.com/IBM-Swift/Swift-JWT) library is used to
  decode JWT strings. To successfully decode it, you must specify the `Claims` that will
@@ -185,8 +187,9 @@ public class CredentialsJWT<C: Claims>: CredentialsPluginProtocol {
                             onFailure: @escaping (HTTPStatusCode?, [String:String]?) -> Void,
                             onPass: @escaping (HTTPStatusCode?, [String:String]?) -> Void,
                             inProgress: @escaping () -> Void) {
-        
-        if let type = request.headers["X-token-type"], type == name {
+
+        // Attempt to authenticate requests with X-token-type: JWT or no X-token-type header
+        if request.headers["X-token-type"] == nil || request.headers["X-token-type"]? == .some(name) {
             if let rawToken = request.headers["Authorization"] {
                 if rawToken.hasPrefix("Bearer") {
                     let rawTokenParts = rawToken.split(separator: " ", maxSplits: 2)

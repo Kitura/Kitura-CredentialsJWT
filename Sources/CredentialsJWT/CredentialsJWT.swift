@@ -189,7 +189,7 @@ public class CredentialsJWT<C: Claims>: CredentialsPluginProtocol {
                             inProgress: @escaping () -> Void) {
 
         // Attempt to authenticate requests with X-token-type: JWT or no X-token-type header
-        if request.headers["X-token-type"] == nil || request.headers["X-token-type"]? == .some(name) {
+        if request.headers["X-token-type"] == nil || request.headers["X-token-type"] == .some(name) {
             if let rawToken = request.headers["Authorization"] {
                 if rawToken.hasPrefix("Bearer") {
                     let rawTokenParts = rawToken.split(separator: " ", maxSplits: 2)

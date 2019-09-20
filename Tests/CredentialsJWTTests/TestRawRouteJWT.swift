@@ -476,14 +476,14 @@ class TestRawRouteJWT : XCTestCase {
 
     }
 
-    // Tests that when a request to a raw route that includes this middleware does not
-    // contain an X-token-type header, the middleware skips authentication and a
-    // second handler is instead invoked, after which authorization fails.
+    // Tests that when a request to a raw route that includes this middleware contains
+    // a valid Authorization header, but does not contain an X-token-type header, the
+    // middleware attempts authentication anyway and authentication succeeds.
     func testMissingTokenType() {
         performServerTest(router: router) { expectation in
             self.performRequest(method: "get", path: "/rawtokenauth", callback: { response in
                 XCTAssertNotNil(response, "ERROR!!! ClientRequest response object was nil")
-                XCTAssertEqual(response?.statusCode, HTTPStatusCode.unauthorized, "HTTP Status code was \(String(describing: response?.statusCode))")
+                XCTAssertEqual(response?.statusCode, HTTPStatusCode.OK, "HTTP Status code was \(String(describing: response?.statusCode))")
                 expectation.fulfill()
             }, headers: ["Authorization" : "Bearer " + self.jwtString])
         }

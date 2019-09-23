@@ -20,23 +20,20 @@ import LoggerAPI
 import Credentials
 import Foundation
 
-// CLASS TAKEN FROM CREDENTIALS GOOGLE AND USED ONLY IN TESTS.
-public class CredentialsGoogleToken: CredentialsPluginProtocol {
+// Simplified copy of CredentialsGoogleToken, only used in tests.
+class TestCredentialsGoogleToken: CredentialsPluginProtocol {
 
-    public var usersCache: NSCache<NSString, BaseCacheElement>?
+    var usersCache: NSCache<NSString, BaseCacheElement>?
 
-    public var name: String {
-        return "GoogleToken"
-    }
+    var name: String { return "GoogleToken" }
 
-    public var redirecting: Bool {
-        return false
-    }
-    public func authenticate(request: RouterRequest, response: RouterResponse,
-                             options: [String:Any], onSuccess: @escaping (UserProfile) -> Void,
-                             onFailure: @escaping (HTTPStatusCode?, [String:String]?) -> Void,
-                             onPass: @escaping (HTTPStatusCode?, [String:String]?) -> Void,
-                             inProgress: @escaping () -> Void) {
+    var redirecting: Bool { return false }
+
+    func authenticate(request: RouterRequest, response: RouterResponse,
+                      options: [String:Any], onSuccess: @escaping (UserProfile) -> Void,
+                      onFailure: @escaping (HTTPStatusCode?, [String:String]?) -> Void,
+                      onPass: @escaping (HTTPStatusCode?, [String:String]?) -> Void,
+                      inProgress: @escaping () -> Void) {
         if let type = request.headers["X-token-type"], type == name {
             if request.headers["access_token"] != nil {
                 let googleProfile = UserProfile(id: "TestGoogle", displayName: "TestGoogle", provider: "GoogleToken")

@@ -171,6 +171,10 @@ public class CredentialsJWT<C: Claims>: CredentialsPluginProtocol {
     
     /// Authenticate incoming request using a JWT.
     ///
+    /// Behaviour depends on the presence (and value) of the `X-token-type` header:
+    ///  - `X-token-type: JWT`: Expects a valid JWT string in the `Authorization` header.
+    ///  - no `X-token-type` header: Attempts to extract a valid JWT string from the `Authorization` header, but will defer to other plugins (rather than failing authentication).
+    ///
     /// - Parameter request: The `RouterRequest` object used to get information
     ///                     about the request.
     /// - Parameter response: The `RouterResponse` object used to respond to the
@@ -188,8 +192,8 @@ public class CredentialsJWT<C: Claims>: CredentialsPluginProtocol {
                             onPass: @escaping (HTTPStatusCode?, [String:String]?) -> Void,
                             inProgress: @escaping () -> Void) {
 
-        // Attempt to authenticate requests with X-token-type: JWT or no X-token-type header
-        if request.headers["X-token-type"] == nil || request.headers["X-token-type"] == .some(name) {
+        let noTokenType = (request.headers["X-token-type"] == nil)
+        if  noTokenType || request.headers["X-token-type"] == .some(self.name) {
             if let rawToken = request.headers["Authorization"] {
                 if rawToken.hasPrefix("Bearer") {
                     let rawTokenParts = rawToken.split(separator: " ", maxSplits: 2)
@@ -246,14 +250,25 @@ public class CredentialsJWT<C: Claims>: CredentialsPluginProtocol {
                     self.usersCache?.setObject(newCacheElement, forKey: key)
                     onSuccess(userProfile)
                 } catch {
-                    Log.info("JWT can't be verified: \(error)")
-                    onFailure(nil, nil)
+                    // Authorization header did not contain a valid JWT
+                    if (noTokenType) {
+                        // No X-token-type header: Allow other plugins to attempt to authenticate the Authorization header
+                        onPass(nil, nil)
+                    } else {
+                        Log.info("JWT can't be verified: \(error)")
+                        onFailure(nil, nil)
+                    }
                 }
                 
             } else {
                 // No Authorization header
-                Log.debug("Missing authorization header")
-                onFailure(nil, nil)
+                if (noTokenType) {
+                    // No X-token-type header: Allow other plugins to authenticate
+                    onPass(nil, nil)
+                } else {
+                    Log.debug("Missing authorization header")
+                    onFailure(nil, nil)
+                }
             }
             
         } else {

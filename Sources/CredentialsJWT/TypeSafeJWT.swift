@@ -102,22 +102,30 @@ extension JWT: TypeSafeCredentials {
         }
     }
     
+    /// Attempts to authenticate a request with an Authorization header containing a JWT.
+    /// The possible outcomes depend on the `X-token-type` header:
+    /// - If `X-token-type` is set to `JWT`, then this will either succeed or fail.
+    /// - If `X-token-type` is set to another value, this will pass (defer to other type-safe
+    ///   middlewares in the case of multi-auth).
+    /// - If `X-token-type` is not set, then this and will either succeed or pass.
     public static func authenticate(request: RouterRequest, response: RouterResponse,
                                     onSuccess: @escaping (JWT<T>) -> Void,
                                     onFailure: @escaping (HTTPStatusCode?, [String : String]?) -> Void,
                                     onSkip: @escaping (HTTPStatusCode?, [String : String]?) -> Void) {
-        // Check whether this request declares that a Google token is being supplied
-        guard let type = request.headers["X-token-type"], type == "JWT" else {
+        // Check whether this request declares that a JWT is being supplied.
+        let tokenHeader = request.headers["X-token-type"]
+        let noTokenType = (tokenHeader == nil)
+        if let tokenHeader = tokenHeader, tokenHeader != "JWT" {
             return onSkip(nil, nil)
         }
         // Check whether a token has been supplied
         guard let authHeader = request.headers["Authorization"] else {
-            return onFailure(nil, nil)
+            return noTokenType ? onSkip(nil, nil) : onFailure(nil, nil)
         }
         // Unpack the token from the header
         let authParts = authHeader.split(separator: " ", maxSplits: 2)
         guard authParts.count == 2, authParts[0] == "Bearer" else {
-            return onFailure(nil, nil)
+            return noTokenType ? onSkip(nil, nil) : onFailure(nil, nil)
         }
         let token = String(authParts[1])
 
@@ -129,7 +137,7 @@ extension JWT: TypeSafeCredentials {
         guard let verifier = TypeSafeJWT.verifier,
             let jwt = try? JWT<T>(jwtString: token, verifier: verifier)
             else {
-                return onFailure(nil, nil)
+                return noTokenType ? onSkip(nil, nil) : onFailure(nil, nil)
         }
         saveInCache(profile: jwt, token: token)
         onSuccess(jwt)

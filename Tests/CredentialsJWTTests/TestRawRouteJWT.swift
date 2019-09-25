@@ -25,59 +25,6 @@ import Dispatch
 
 @testable import CredentialsJWT
 
-
-// A claims structure that will be used for the tests.
-// The `sub` claim holds the user's identity.
-struct TestClaims: Claims, Equatable {
-
-    var sub: String
-
-   // Testing requirement: Equatable
-    static func == (lhs: TestClaims, rhs: TestClaims) -> Bool {
-        return
-            lhs.sub == rhs.sub
-    }
-}
-
-// An alternate claims structure that will be used for the tests.
-// The `username` holds the user's identity.
-struct TestAlternateClaims: Claims, Equatable {
-
-    var username: String
-
-   // Testing requirement: Equatable
-    static func == (lhs: TestAlternateClaims, rhs: TestAlternateClaims) -> Bool {
-        return
-            lhs.username == rhs.username
-    }
-}
-
-// A claims structure containing custom claims that should be extracted as part of the
-// UserProfile. The `id` holds the user's identity.
-struct TestDelegateClaims: Claims, Equatable {
-    let id: Int
-    let fullName: String
-    let email: String
-
-    // Testing requirement: Equatable
-     static func == (lhs: TestDelegateClaims, rhs: TestDelegateClaims) -> Bool {
-         return
-            lhs.id == rhs.id && lhs.fullName == rhs.fullName && lhs.email == rhs.email
-     }
-}
-
-// A UserProfileDelegate for the route accessed in testDelegateToken. Custom claims
-// 'fullName' and 'email' are applied to the UserProfile 'displayName' and 'emails'
-// fields.
-struct MyDelegate: UserProfileDelegate {
-    func update(userProfile: UserProfile, from dictionary: [String:Any]) {
-        // `userProfile.id` already contains `id`
-        userProfile.displayName = dictionary["fullName"]! as! String
-        let email = UserProfile.UserProfileEmail(value: dictionary["email"]! as! String, type: "home")
-        userProfile.emails = [email]
-    }
-}
-
 // Sets option for CredentialsJWT to allow username to be used instead of sub, used in the alternate
 // credentials tests.
 let jwtOptions: [String:Any] = [CredentialsJWTOptions.subject: "username"]
@@ -92,16 +39,6 @@ let delegateOptions: [String:Any] = [CredentialsJWTOptions.subject: "id", Creden
 let delegateCredentials = CredentialsJWT<TestDelegateClaims>(verifier: .hs256(key: "<PrivateKey>".data(using: .utf8)!), options: delegateOptions)
 
 class TestRawRouteJWT : XCTestCase {
-
-    // A User structure that can be passed into the generate jwt route.
-    struct User: Codable {
-        let name: String
-        let email: String?
-        init(name: String, email: String? = nil) {
-            self.name = name
-            self.email = email
-        }
-    }
 
     // Initiliasting the 3 users names and token variables.
     // The actual String is generated in the setUp function before each test.

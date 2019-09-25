@@ -85,3 +85,62 @@ class TestCredentialsHTTPBasic : CredentialsPluginProtocol {
         }
     }
 }
+
+protocol TypeSafeHTTPBasic : TypeSafeCredentials {
+    static var realm: String { get }
+    static func verifyPassword(username: String, password: String, callback: @escaping (Self?) -> Void) -> Void
+}
+
+extension TypeSafeHTTPBasic {
+    public var provider: String { return "HTTPBasic" }
+    public static var realm: String { return "User" }
+
+    public static func authenticate(request: RouterRequest, response: RouterResponse, onSuccess: @escaping (Self) -> Void, onFailure: @escaping (HTTPStatusCode?, [String : String]?) -> Void, onSkip: @escaping (HTTPStatusCode?, [String : String]?) -> Void) {
+
+        let userid: String
+        let password: String
+        if let requestUser = request.urlURL.user, let requestPassword = request.urlURL.password {
+            userid = requestUser
+            password = requestPassword
+        } else {
+            guard let authorizationHeader = request.headers["Authorization"]  else {
+                return onSkip(.unauthorized, ["WWW-Authenticate" : "Basic realm=\"" + realm + "\""])
+            }
+
+            let authorizationHeaderComponents = authorizationHeader.components(separatedBy: " ")
+            guard authorizationHeaderComponents.count == 2,
+                authorizationHeaderComponents[0] == "Basic",
+                let decodedData = Data(base64Encoded: authorizationHeaderComponents[1], options: Data.Base64DecodingOptions(rawValue: 0)),
+                let userAuthorization = String(data: decodedData, encoding: .utf8) else {
+                    return onSkip(.unauthorized, ["WWW-Authenticate" : "Basic realm=\"" + realm + "\""])
+            }
+            let credentials = userAuthorization.components(separatedBy: ":")
+            guard credentials.count >= 2 else {
+                return onFailure(.badRequest, nil)
+            }
+            userid = credentials[0]
+            password = credentials[1]
+        }
+
+        verifyPassword(username: userid, password: password) { selfInstance in
+            if let selfInstance = selfInstance {
+                onSuccess(selfInstance)
+            } else {
+                onFailure(.unauthorized, ["WWW-Authenticate" : "Basic realm=\"" + self.realm + "\""])
+            }
+        }
+    }
+}
+
+// Trivial implementation of a type-safe basic authentication that only allows
+// the user "John" with password "12345".
+struct TestBasicAuthedUser: TypeSafeHTTPBasic {
+    static func verifyPassword(username: String, password: String, callback: @escaping (TestBasicAuthedUser?) -> Void) {
+        if username == "John" && password == "12345" {
+            callback(TestBasicAuthedUser(id: username))
+        } else {
+            callback(nil)
+        }
+    }
+    var id: String
+}

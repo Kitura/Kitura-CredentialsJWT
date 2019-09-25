@@ -62,6 +62,8 @@ class TestTypeSafeJWT : XCTestCase {
         ("testTwoInCache", testTwoInCache),
         ("testCacheEviction", testCacheEviction),
         ("testCachedProfile", testCachedProfile),
+        ("testGoodToken", testGoodToken),
+        ("testBadToken", testBadToken),
         ("testMissingTokenTypeJWT", testMissingTokenTypeJWT),
         ("testMissingTokenTypeBasic", testMissingTokenTypeBasic),
         ("testMissingAccessToken", testMissingAccessToken)

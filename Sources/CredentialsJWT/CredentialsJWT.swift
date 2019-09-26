@@ -27,8 +27,10 @@ import LoggerAPI
  A plugin for Kitura-Credentials supporting authentication using [JSON Web Tokens](https://jwt.io/).
 
  This plugin requires that the following HTTP headers are present on a request:
- - `X-token-type`: must be `JWT`
- - `Authorization`: the JWT string, optionally prefixed with `Bearer`.
+ - `Authorization`: the JWT string, optionally prefixed with `Bearer`
+
+ If you wish to use multiple Credentials plugins, then additionally the header:
+ - `X-token-type`: must equal `JWT`.
 
  The [Swift-JWT](https://github.com/IBM-Swift/Swift-JWT) library is used to
  decode JWT strings. To successfully decode it, you must specify the `Claims` that will
@@ -169,6 +171,10 @@ public class CredentialsJWT<C: Claims>: CredentialsPluginProtocol {
     
     /// Authenticate incoming request using a JWT.
     ///
+    /// Behaviour depends on the presence (and value) of the `X-token-type` header:
+    ///  - `X-token-type: JWT`: Expects a valid JWT string in the `Authorization` header.
+    ///  - no `X-token-type` header: Attempts to extract a valid JWT string from the `Authorization` header, but will defer to other plugins (rather than failing authentication).
+    ///
     /// - Parameter request: The `RouterRequest` object used to get information
     ///                     about the request.
     /// - Parameter response: The `RouterResponse` object used to respond to the
@@ -185,8 +191,9 @@ public class CredentialsJWT<C: Claims>: CredentialsPluginProtocol {
                             onFailure: @escaping (HTTPStatusCode?, [String:String]?) -> Void,
                             onPass: @escaping (HTTPStatusCode?, [String:String]?) -> Void,
                             inProgress: @escaping () -> Void) {
-        
-        if let type = request.headers["X-token-type"], type == name {
+
+        let noTokenType = (request.headers["X-token-type"] == nil)
+        if  noTokenType || request.headers["X-token-type"] == .some(self.name) {
             if let rawToken = request.headers["Authorization"] {
                 if rawToken.hasPrefix("Bearer") {
                     let rawTokenParts = rawToken.split(separator: " ", maxSplits: 2)
@@ -243,14 +250,25 @@ public class CredentialsJWT<C: Claims>: CredentialsPluginProtocol {
                     self.usersCache?.setObject(newCacheElement, forKey: key)
                     onSuccess(userProfile)
                 } catch {
-                    Log.info("JWT can't be verified: \(error)")
-                    onFailure(nil, nil)
+                    // Authorization header did not contain a valid JWT
+                    if (noTokenType) {
+                        // No X-token-type header: Allow other plugins to attempt to authenticate the Authorization header
+                        onPass(nil, nil)
+                    } else {
+                        Log.info("JWT can't be verified: \(error)")
+                        onFailure(nil, nil)
+                    }
                 }
                 
             } else {
                 // No Authorization header
-                Log.debug("Missing authorization header")
-                onFailure(nil, nil)
+                if (noTokenType) {
+                    // No X-token-type header: Allow other plugins to authenticate
+                    onPass(nil, nil)
+                } else {
+                    Log.debug("Missing authorization header")
+                    onFailure(nil, nil)
+                }
             }
             
         } else {

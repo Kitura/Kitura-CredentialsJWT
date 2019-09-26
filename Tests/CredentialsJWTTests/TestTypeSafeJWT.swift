@@ -25,18 +25,6 @@ import LoggerAPI
 
 class TestTypeSafeJWT : XCTestCase {
 
-    // A claims structure that will be used for the tests.  The `sub` claim holds the users name.
-    struct TestClaims: Claims, Equatable {
-
-        var sub: String
-
-       // Testing requirement: Equatable
-        static func == (lhs: TestClaims, rhs: TestClaims) -> Bool {
-            return
-                lhs.sub == rhs.sub
-        }
-    }
-
     // A User structure that can be passed into the generate jwt route.
     struct User: Codable {
         var name: String
@@ -74,7 +62,10 @@ class TestTypeSafeJWT : XCTestCase {
         ("testTwoInCache", testTwoInCache),
         ("testCacheEviction", testCacheEviction),
         ("testCachedProfile", testCachedProfile),
-        ("testMissingTokenType", testMissingTokenType),
+        ("testGoodToken", testGoodToken),
+        ("testBadToken", testBadToken),
+        ("testMissingTokenTypeJWT", testMissingTokenTypeJWT),
+        ("testMissingTokenTypeBasic", testMissingTokenTypeBasic),
         ("testMissingAccessToken", testMissingAccessToken)
       ]
         
@@ -102,7 +93,7 @@ class TestTypeSafeJWT : XCTestCase {
                 do {
                     guard let body = try response?.readString(), let responseData = body.data(using: .utf8) else {
                         XCTFail("Couldn't read response")
-                        return
+                        return expectation.fulfill()
                     }
                     self.jwtToken = try JSONDecoder().decode(AccessToken.self, from: responseData)
                     self.jwtString = self.jwtToken.accessToken
@@ -125,7 +116,7 @@ class TestTypeSafeJWT : XCTestCase {
                 do {
                     guard let body = try response?.readString(), let responseData = body.data(using: .utf8) else {
                         XCTFail("Couldn't read response")
-                        return
+                        return expectation.fulfill()
                     }
                     do {
                         self.jwtToken2 = try JSONDecoder().decode(AccessToken.self, from: responseData)
@@ -153,7 +144,7 @@ class TestTypeSafeJWT : XCTestCase {
                 do {
                     guard let body = try response?.readString(), let responseData = body.data(using: .utf8) else {
                         XCTFail("Couldn't read response")
-                        return
+                        return expectation.fulfill()
                     }
                     do {
                         self.jwtToken3 = try JSONDecoder().decode(AccessToken.self, from: responseData)
@@ -262,7 +253,7 @@ class TestTypeSafeJWT : XCTestCase {
                     do {
                         guard let body = try response?.readString(), let profileJSON = body.data(using: .utf8) else {
                             XCTFail("No response body")
-                            return
+                            return expectation.fulfill()
                         }
                         let profile = try JSONDecoder().decode(JWT<TestClaims>.self, from: profileJSON)
                         XCTAssertEqual(profile.claims, jwt.claims, "Body \(profile) is not equal to \(jwt)")
@@ -277,21 +268,47 @@ class TestTypeSafeJWT : XCTestCase {
         }
     }
 
-    // Tests that when a request to a Codable route that includes this middleware does not
-    // contain the matching X-token-type header, the middleware skips authentication and a
-    // second handler is instead invoked.
-    func testMissingTokenType() {
+    // Tests that when a request to a Codable route that includes this middleware receives
+    // an X-token-type header of 'JWT' and a valid JWT string in the Authorization header,
+    // authentication succeeds.
+    func testGoodToken() {
         performServerTest(router: router) { expectation in
-            self.performRequest(method: "get", path: "/multipleHandlers", callback: {response in
+            self.performRequest(method: "get", path: "/singleHandler", callback: {response in
+                XCTAssertNotNil(response, "ERROR!!! ClientRequest response object was nil")
+                XCTAssertEqual(response?.statusCode, .OK)
+                expectation.fulfill()
+            }, headers: ["Authorization" : "Bearer " + self.jwtString, "X-token-type" : "JWT"])
+        }
+    }
+
+    // Tests that when a request to a Codable route that includes this middleware receives
+    // an X-token-type header of 'JWT' and an invalid JWT string in the Authorization
+    // header, authentication fails.
+    func testBadToken() {
+        performServerTest(router: router) { expectation in
+            self.performRequest(method: "get", path: "/singleHandler", callback: {response in
+                XCTAssertNotNil(response, "ERROR!!! ClientRequest response object was nil")
+                XCTAssertEqual(response?.statusCode, .unauthorized)
+                expectation.fulfill()
+            }, headers: ["Authorization" : "Bearer of bad news", "X-token-type" : "JWT"])
+        }
+    }
+
+    // Tests that when a request is made to a Codable route that includes this middleware
+    // as one of multiple authentication methods, and the request does not contain the
+    // X-token-type header, the middleware successfully authenticates a JWT token.
+    func testMissingTokenTypeJWT() {
+        performServerTest(router: router) { expectation in
+            self.performRequest(method: "get", path: "/multipleAuth", callback: {response in
                 XCTAssertNotNil(response, "ERROR!!! ClientRequest response object was nil")
                 XCTAssertEqual(response?.statusCode, HTTPStatusCode.OK, "HTTP Status code was \(String(describing: response?.statusCode))")
                 do {
                     guard let body = try response?.readString(), let profileJSON = body.data(using: .utf8) else {
                         XCTFail("No response body")
-                        return
+                        return expectation.fulfill()
                     }
                     let testResponse = try JSONDecoder().decode(JWT<TestClaims>.self, from: profileJSON)
-                    let expectedResponse = JWT(claims: TestClaims(sub: "Test"))
+                    let expectedResponse = JWT(claims: TestClaims(sub: self.testUser.name))
                     XCTAssertEqual(testResponse.claims, expectedResponse.claims, "Response from second handler did not contain expected data")
                 } catch {
                     XCTFail("Could not decode response: \(error)")
@@ -301,12 +318,30 @@ class TestTypeSafeJWT : XCTestCase {
         }
     }
 
+    // Tests that when a request is made to a Codable route that includes this middleware
+    // as one of multiple authentication methods, and the request does not contain the
+    // X-token-type header, the JWT middleware skips and allows Basic auth to proceed.
+    func testMissingTokenTypeBasic() {
+        guard let httpBasicCredentials = "John:12345".data(using: .utf8)?.base64EncodedString() else {
+            return XCTFail("Couldn't create credentials string")
+        }
+        performServerTest(router: router) { expectation in
+            self.performRequest(method: "get", path: "/multipleAuth", callback: {response in
+                XCTAssertNotNil(response, "ERROR!!! ClientRequest response object was nil")
+                // For the purposes of detecting which method of authentication was used, we
+                // expect .accepted from the multipleAuth route with successful basic auth.
+                XCTAssertEqual(response?.statusCode, HTTPStatusCode.accepted)
+                expectation.fulfill()
+            }, headers: ["Authorization" : "Basic " + httpBasicCredentials])
+        }
+    }
+
     // Tests that when a request to a Codable route that includes this middleware contains
     // the matching X-token-type header, but does not supply 'Authorization', the middleware
     // fails authentication and returns unauthorized.
     func testMissingAccessToken() {
         performServerTest(router: router) { expectation in
-            self.performRequest(method: "get", path: "/multipleHandlers", callback: {response in
+            self.performRequest(method: "get", path: "/singleHandler", callback: {response in
                 XCTAssertNotNil(response, "ERROR!!! ClientRequest response object was nil")
                 XCTAssertEqual(response?.statusCode, HTTPStatusCode.unauthorized, "HTTP Status code was \(String(describing: response?.statusCode))")
                 expectation.fulfill()
@@ -317,12 +352,13 @@ class TestTypeSafeJWT : XCTestCase {
     // Function that creates the codable routes for the router.
     static func setupCodableRouter() -> Router {
         let router = Router()
-        
+        let key = "<PrivateKey>".data(using: .utf8)!
+        TypeSafeJWT.verifier = .hs256(key: key)
+
         // Route that generates a jwt from a given User's name.
         router.post("/generatejwt") { (user: User, respondWith: (AccessToken?, RequestError?) -> Void) in
             var jwt = JWT(claims: TestClaims(sub: user.name))
-            guard let key = "<PrivateKey>".data(using: .utf8),
-                let signedJWT = try? jwt.sign(using: .hs256(key: key))
+            guard let signedJWT = try? jwt.sign(using: .hs256(key: key))
             else {
                 return respondWith(nil, .internalServerError)
             }
@@ -333,14 +369,15 @@ class TestTypeSafeJWT : XCTestCase {
             respondWith(profile, nil)
         }
 
-        router.get("/multipleHandlers") { (profile: JWT<TestClaims>, respondWith: (JWT<TestClaims>?, RequestError?) -> Void) in
+        router.get("/multipleAuth") { (auth: TestMultiAuth, respondWith: (JWT<TestClaims>?, RequestError?) -> Void) in
+            guard let profile = auth.profile else {
+                // Indicate that request was successful, using .accepted to indicate
+                // that basic authentication was used instead of JWT.
+                return respondWith(nil, .accepted)
+            }
             respondWith(profile, nil)
         }
 
-        router.get("/multipleHandlers") { (respondWith: (JWT<TestClaims>?, RequestError?) -> Void) in
-            respondWith(JWT(claims: TestClaims(sub: "Test")), nil)
-        }
-        
         return router
         
     }

@@ -25,59 +25,6 @@ import Dispatch
 
 @testable import CredentialsJWT
 
-
-// A claims structure that will be used for the tests.
-// The `sub` claim holds the user's identity.
-struct TestClaims: Claims, Equatable {
-
-    var sub: String
-
-   // Testing requirement: Equatable
-    static func == (lhs: TestClaims, rhs: TestClaims) -> Bool {
-        return
-            lhs.sub == rhs.sub
-    }
-}
-
-// An alternate claims structure that will be used for the tests.
-// The `username` holds the user's identity.
-struct TestAlternateClaims: Claims, Equatable {
-
-    var username: String
-
-   // Testing requirement: Equatable
-    static func == (lhs: TestAlternateClaims, rhs: TestAlternateClaims) -> Bool {
-        return
-            lhs.username == rhs.username
-    }
-}
-
-// A claims structure containing custom claims that should be extracted as part of the
-// UserProfile. The `id` holds the user's identity.
-struct TestDelegateClaims: Claims, Equatable {
-    let id: Int
-    let fullName: String
-    let email: String
-
-    // Testing requirement: Equatable
-     static func == (lhs: TestDelegateClaims, rhs: TestDelegateClaims) -> Bool {
-         return
-            lhs.id == rhs.id && lhs.fullName == rhs.fullName && lhs.email == rhs.email
-     }
-}
-
-// A UserProfileDelegate for the route accessed in testDelegateToken. Custom claims
-// 'fullName' and 'email' are applied to the UserProfile 'displayName' and 'emails'
-// fields.
-struct MyDelegate: UserProfileDelegate {
-    func update(userProfile: UserProfile, from dictionary: [String:Any]) {
-        // `userProfile.id` already contains `id`
-        userProfile.displayName = dictionary["fullName"]! as! String
-        let email = UserProfile.UserProfileEmail(value: dictionary["email"]! as! String, type: "home")
-        userProfile.emails = [email]
-    }
-}
-
 // Sets option for CredentialsJWT to allow username to be used instead of sub, used in the alternate
 // credentials tests.
 let jwtOptions: [String:Any] = [CredentialsJWTOptions.subject: "username"]
@@ -92,16 +39,6 @@ let delegateOptions: [String:Any] = [CredentialsJWTOptions.subject: "id", Creden
 let delegateCredentials = CredentialsJWT<TestDelegateClaims>(verifier: .hs256(key: "<PrivateKey>".data(using: .utf8)!), options: delegateOptions)
 
 class TestRawRouteJWT : XCTestCase {
-
-    // A User structure that can be passed into the generate jwt route.
-    struct User: Codable {
-        let name: String
-        let email: String?
-        init(name: String, email: String? = nil) {
-            self.name = name
-            self.email = email
-        }
-    }
 
     // Initiliasting the 3 users names and token variables.
     // The actual String is generated in the setUp function before each test.
@@ -135,7 +72,8 @@ class TestRawRouteJWT : XCTestCase {
         ("testTokenTimeToLive", testTokenTimeToLive),
         ("testSkipAuthentication", testSkipAuthentication),
         ("testMissingTokenType", testMissingTokenType),
-        ("testMissingAccessToken", testMissingAccessToken)
+        ("testMissingAccessToken", testMissingAccessToken),
+        ("testPassOnMissingTokenType", testPassOnMissingTokenType),
       ]
 
     }
@@ -234,7 +172,6 @@ class TestRawRouteJWT : XCTestCase {
                         return expectation.fulfill()
                     }
                     self.jwtString4 = body
-                    print(self.jwtString4)
                 } catch {
                     XCTFail("Couldn't read string from response")
                     expectation.fulfill()
@@ -476,14 +413,14 @@ class TestRawRouteJWT : XCTestCase {
 
     }
 
-    // Tests that when a request to a raw route that includes this middleware does not
-    // contain an X-token-type header, the middleware skips authentication and a
-    // second handler is instead invoked, after which authorization fails.
+    // Tests that when a request to a raw route that includes this middleware contains
+    // a valid Authorization header, but does not contain an X-token-type header, the
+    // middleware attempts authentication anyway and authentication succeeds.
     func testMissingTokenType() {
         performServerTest(router: router) { expectation in
             self.performRequest(method: "get", path: "/rawtokenauth", callback: { response in
                 XCTAssertNotNil(response, "ERROR!!! ClientRequest response object was nil")
-                XCTAssertEqual(response?.statusCode, HTTPStatusCode.unauthorized, "HTTP Status code was \(String(describing: response?.statusCode))")
+                XCTAssertEqual(response?.statusCode, HTTPStatusCode.OK, "HTTP Status code was \(String(describing: response?.statusCode))")
                 expectation.fulfill()
             }, headers: ["Authorization" : "Bearer " + self.jwtString])
         }
@@ -502,6 +439,31 @@ class TestRawRouteJWT : XCTestCase {
         }
     }
 
+    // Tests that CredentialsJWT will successfully defer to other plugins after
+    // speculatively attempting to authenticate a request containing an Authorization
+    // header but no `X-token-type` header.
+    // In this case, we have registered CredentialsHTTPBasic after CredentialsJWT.
+    func testPassOnMissingTokenType() {
+        guard let httpBasicCredentials = "John:12345".data(using: .utf8)?.base64EncodedString() else {
+            return XCTFail("Couldn't create credentials string")
+        }
+        performServerTest(router: router) { expectation in
+            self.performRequest(method: "get", path: "/rawtokenauth", callback: { response in
+                guard let response = response else {
+                    return XCTFail("ERROR!!! ClientRequest response object was nil")
+                }
+                XCTAssertEqual(response.statusCode, HTTPStatusCode.OK, "HTTP Status code was \(response.statusCode)")
+                do {
+                    let responseString = try response.readString()
+                    XCTAssertEqual(responseString, "John")
+                } catch {
+                    XCTFail("Unable to read response string")
+                }
+                expectation.fulfill()
+            }, headers: ["Authorization" : "Basic " + httpBasicCredentials])
+        }
+    }
+
     // Function that creates the raw routes for the router.
     static func setupRawRouter() -> Router {
         let router = Router()
@@ -511,8 +473,18 @@ class TestRawRouteJWT : XCTestCase {
         let altTokenCredentials = Credentials()
         let delegateTokenCredentials = Credentials()
 
+        // Simple verifier that expects test values
+        let httpBasicVerifier: TestCredentialsHTTPBasic.VerifyPassword = { user, pass, callback in
+            if user == "John" && pass == "12345" {
+                callback(UserProfile(id: user, displayName: user, provider: "basic"))
+            } else {
+                callback(nil)
+            }
+        }
+
         tokenCredentials.register(plugin: jwtCredentials)
-        tokenCredentials.register(plugin: CredentialsGoogleToken())
+        tokenCredentials.register(plugin: TestCredentialsGoogleToken())
+        tokenCredentials.register(plugin: TestCredentialsHTTPBasic(verifyPassword: httpBasicVerifier))
         altTokenCredentials.register(plugin: altCredentials)
         delegateTokenCredentials.register(plugin: delegateCredentials)
 

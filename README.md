@@ -54,7 +54,7 @@ Add `CredentialsJWT` to your target's dependencies:
 import CredentialsJWT
 ```
 
-### Using the `CredentialsJWT` plugin
+## Using the `CredentialsJWT` plugin
 
 This plugin requires that the following HTTP headers are present on a request:
 - `X-token-type`: must be `JWT`

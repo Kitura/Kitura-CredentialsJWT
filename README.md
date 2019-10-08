@@ -33,6 +33,27 @@ This package provides two facilities:
 ## Swift version
 The latest version of Kitura-CredentialsJWT requires **Swift 4.0** or newer. You can download this version of the Swift binaries by following this [link](https://swift.org/download/). Compatibility with other Swift versions is not guaranteed.
 
+## Usage
+
+#### Add dependencies
+
+Add the `Kitura-CredentialsJWT` dependency within your application’s `Package.swift` file. Substitute `"x.x.x"` with the latest `Kitura-CredentialsJWT` [release](https://github.com/IBM-Swift/Kitura-CredentialsJWT/releases).
+
+```swift
+.package(url: "https://github.com/IBM-Swift/Kitura-CredentialsJWT.git", from: "x.x.x")
+```
+
+Add `CredentialsJWT` to your target's dependencies:
+
+```swift
+.target(name: "example", dependencies: ["CredentialsJWT"]),
+```
+#### Import packages
+
+```swift
+import CredentialsJWT
+```
+
 ## Using the `CredentialsJWT` plugin
 
 This plugin requires that the following HTTP headers are present on a request:

@@ -218,6 +218,7 @@ public class CredentialsJWT<C: Claims>: CredentialsPluginProtocol, CredentialsTo
         if rawToken.hasPrefix("Bearer") {
             let rawTokenParts = rawToken.split(separator: " ", maxSplits: 2)
             
+            // Added 10/19/19-- previously there was no check for the number of parts parsed, and the following array index could fail and crash the plugin/app. This would happen if the rawToken was of the form "BearerXXXXX" without a space after "Bearer".
             guard rawTokenParts.count >= 2 else {
                 Log.debug("Badly formatted authorization header")
                 onFailure(nil, nil)
@@ -230,17 +231,16 @@ public class CredentialsJWT<C: Claims>: CredentialsPluginProtocol, CredentialsTo
             token = rawToken
         }
         
-        getProfileAndCacheIfNeeded(token: token, options: options,
-            onSuccess: { userProfile in
-                if let userProfile = userProfile {
-                    onSuccess(userProfile)
-                }
-                else {
-                    onPass(nil, nil)
-                }
-            },
-            onFailure: onFailure
-        )
+        getProfileAndCacheIfNeeded(token: token, options: options) { result in
+            switch result {
+            case .success(let userProfile):
+                onSuccess(userProfile)
+            case .other:
+                onPass(nil, nil)
+            case .failure(let statusCode, let dict):
+                onFailure(statusCode, dict)
+            }
+        }
     }
     
     public func generateNewProfile(token: String, options: [String : Any], completion: @escaping (CredentialsTokenTTLResult) -> Void) {
@@ -275,7 +275,7 @@ public class CredentialsJWT<C: Claims>: CredentialsPluginProtocol, CredentialsTo
             // Authorization header did not contain a valid JWT
             if (noTokenType) {
                 // No X-token-type header: Allow other plugins to attempt to authenticate the Authorization header
-                completion(.success(nil))
+                completion(.other(details: "No X-token-type header"))
             } else {
                 Log.info("JWT can't be verified: \(error)")
                 completion(.failure(nil, nil))

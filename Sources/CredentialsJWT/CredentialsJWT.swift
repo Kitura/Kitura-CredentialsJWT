@@ -235,7 +235,7 @@ public class CredentialsJWT<C: Claims>: CredentialsPluginProtocol, CredentialsTo
             switch result {
             case .success(let userProfile):
                 onSuccess(userProfile)
-            case .other:
+            case .unprocessable:
                 onPass(nil, nil)
             case .failure(let statusCode, let dict):
                 onFailure(statusCode, dict)
@@ -275,7 +275,7 @@ public class CredentialsJWT<C: Claims>: CredentialsPluginProtocol, CredentialsTo
             // Authorization header did not contain a valid JWT
             if (noTokenType) {
                 // No X-token-type header: Allow other plugins to attempt to authenticate the Authorization header
-                completion(.other(details: "No X-token-type header"))
+                completion(.unprocessable(details: "No X-token-type header"))
             } else {
                 Log.info("JWT can't be verified: \(error)")
                 completion(.failure(nil, nil))

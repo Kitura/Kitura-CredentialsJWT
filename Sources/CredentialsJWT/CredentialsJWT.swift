@@ -231,6 +231,7 @@ public class CredentialsJWT<C: Claims>: CredentialsPluginProtocol, CredentialsTo
             token = rawToken
         }
         
+        // This call uses `generateNewProfile` (below) to generate a new user profile if needed.
         getProfileAndCacheIfNeeded(token: token, options: options) { result in
             switch result {
             case .success(let userProfile):
@@ -243,6 +244,11 @@ public class CredentialsJWT<C: Claims>: CredentialsPluginProtocol, CredentialsTo
         }
     }
     
+    // Called by the `getProfileAndCacheIfNeeded` method within the CredentialsTokenTTL protocol.
+    // The enum `CredentialsTokenTTLResult` value in the completion closure is returned as
+    // `failure` if the JWT can't be verified / decoded. The `success` enum value is
+    // returned if authentication is successful and a user profile could be generated.
+    // The `unprocessable` enum value is returned if the token doesn't appear to be a JWT.
     public func generateNewProfile(token: String, options: [String : Any], completion: @escaping (CredentialsTokenTTLResult) -> Void) {
 
         do {

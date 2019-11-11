@@ -107,8 +107,8 @@ import LoggerAPI
  - `displayName`: the `fullName` claim,
  - `emails`: an array with a single element, representing the `email` claim.
 */
-public class CredentialsJWT<C: Claims>: CredentialsPluginProtocol {
-    
+public class CredentialsJWT<C: Claims>: CredentialsPluginProtocol, CredentialsTokenTTL {
+
     /// The name of the plugin: `JWT`.
     public var name: String {
         return "JWT"
@@ -135,6 +135,8 @@ public class CredentialsJWT<C: Claims>: CredentialsPluginProtocol {
     
     /// Token variable used after formatting.
     var token = ""
+    
+    private var noTokenType = false
     
     /// A delegate for `UserProfile` manipulation. Use this to further populate the profile using
     /// any fields from the `Claims` that you have defined.
@@ -192,90 +194,100 @@ public class CredentialsJWT<C: Claims>: CredentialsPluginProtocol {
                             onPass: @escaping (HTTPStatusCode?, [String:String]?) -> Void,
                             inProgress: @escaping () -> Void) {
 
-        let noTokenType = (request.headers["X-token-type"] == nil)
-        if  noTokenType || request.headers["X-token-type"] == .some(self.name) {
-            if let rawToken = request.headers["Authorization"] {
-                if rawToken.hasPrefix("Bearer") {
-                    let rawTokenParts = rawToken.split(separator: " ", maxSplits: 2)
-                    token = String(rawTokenParts[1])
-                }
-                else {
-                    token = rawToken
-                }
-                #if os(Linux)
-                    let key = NSString(string: token)
-                #else
-                    let key = token as NSString
-                #endif
-                if let cached = usersCache?.object(forKey: key) {
-                    if let ttl = tokenTimeToLive {
-                        if Date() < cached.createdAt.addingTimeInterval(ttl) {
-                            onSuccess(cached.userProfile)
-                            return
-                        }
-                        // If current time is later than time to live, continue to standard token authentication.
-                        // Don't need to evict token, since it will replaced if the token is successfully autheticated.
-                    } else {
-                        // No time to live set, use token until it is evicted from the cache
-                        onSuccess(cached.userProfile)
-                        return
-                    }
-                }
-                
-                do {
-                    _ = try JWT<C>(jwtString: token, verifier: verifier)
-                    
-                    let components = token.components(separatedBy: ".")
-                    guard components.count == 2 || components.count == 3,
-                        let claimsData = Data(base64urlEncoded: components[1]),
-                        let optionalDict = try? JSONSerialization.jsonObject(with: claimsData, options: []),
-                        let dictionary = optionalDict as? [String:Any]
-                        else {
-                            Log.error("Couldn't decode claims")
-                            return onFailure(nil, nil)
-                    }
-                    // Ensure claims contain the expected subject claim (default `sub`)
-                    guard let subjectClaim = dictionary[subject] else {
-                        Log.warning("Unable to create user profile: JWT claims do not contain '\(subject)'")
-                        return onFailure(nil, nil)
-                    }
-                    // Convert subject claim value to a String
-                    let userid = String("\(subjectClaim)")
-                    let userProfile = UserProfile(id: userid , displayName: userid, provider: "JWT")
-                    
-                    delegate?.update(userProfile: userProfile, from: dictionary)
-                    
-                    let newCacheElement = BaseCacheElement(profile: userProfile)
+        noTokenType = (request.headers["X-token-type"] == nil)
         
-                    self.usersCache?.setObject(newCacheElement, forKey: key)
-                    onSuccess(userProfile)
-                } catch {
-                    // Authorization header did not contain a valid JWT
-                    if (noTokenType) {
-                        // No X-token-type header: Allow other plugins to attempt to authenticate the Authorization header
-                        onPass(nil, nil)
-                    } else {
-                        Log.info("JWT can't be verified: \(error)")
-                        onFailure(nil, nil)
-                    }
-                }
-                
+        guard noTokenType || request.headers["X-token-type"] == .some(self.name) else {
+            onPass(nil, nil)
+            return
+        }
+        
+        guard let rawToken = request.headers["Authorization"] else {
+            // No Authorization header
+            if (noTokenType) {
+                // No X-token-type header: Allow other plugins to authenticate
+                onPass(nil, nil)
             } else {
-                // No Authorization header
-                if (noTokenType) {
-                    // No X-token-type header: Allow other plugins to authenticate
-                    onPass(nil, nil)
-                } else {
-                    Log.debug("Missing authorization header")
-                    onFailure(nil, nil)
-                }
+                Log.debug("Missing authorization header")
+                onFailure(nil, nil)
             }
             
-        } else {
-            onPass(nil, nil)
+            return
+        }
+
+        let token: String
+        if rawToken.hasPrefix("Bearer") {
+            let rawTokenParts = rawToken.split(separator: " ", maxSplits: 2)
+            
+            // Added 10/19/19-- previously there was no check for the number of parts parsed, and the following array index could fail and crash the plugin/app. This would happen if the rawToken was of the form "BearerXXXXX" without a space after "Bearer".
+            guard rawTokenParts.count >= 2 else {
+                Log.debug("Badly formatted authorization header")
+                onFailure(nil, nil)
+                return
+            }
+            
+            token = String(rawTokenParts[1])
+        }
+        else {
+            token = rawToken
+        }
+        
+        // This call uses `generateNewProfile` (below) to generate a new user profile if needed.
+        getProfileAndCacheIfNeeded(token: token, options: options) { result in
+            switch result {
+            case .success(let userProfile):
+                onSuccess(userProfile)
+            case .unprocessable:
+                onPass(nil, nil)
+            case .failure(let statusCode, let dict):
+                onFailure(statusCode, dict)
+            }
         }
     }
     
+    // Called by the `getProfileAndCacheIfNeeded` method within the CredentialsTokenTTL protocol.
+    // The enum `CredentialsTokenTTLResult` value in the completion closure is returned as
+    // `failure` if the JWT can't be verified / decoded. The `success` enum value is
+    // returned if authentication is successful and a user profile could be generated.
+    // The `unprocessable` enum value is returned if the token doesn't appear to be a JWT.
+    public func generateNewProfile(token: String, options: [String : Any], completion: @escaping (CredentialsTokenTTLResult) -> Void) {
+
+        do {
+            _ = try JWT<C>(jwtString: token, verifier: verifier)
+            
+            let components = token.components(separatedBy: ".")
+            guard components.count == 2 || components.count == 3,
+                let claimsData = Data(base64urlEncoded: components[1]),
+                let optionalDict = try? JSONSerialization.jsonObject(with: claimsData, options: []),
+                let dictionary = optionalDict as? [String:Any]
+                else {
+                    Log.error("Couldn't decode claims")
+                    completion(.failure(nil, nil))
+                    return
+            }
+            
+            // Ensure claims contain the expected subject claim (default `sub`)
+            guard let subjectClaim = dictionary[subject] else {
+                Log.warning("Unable to create user profile: JWT claims do not contain '\(subject)'")
+                completion(.failure(nil, nil))
+                return
+            }
+            // Convert subject claim value to a String
+            let userid = String("\(subjectClaim)")
+            let userProfile = UserProfile(id: userid , displayName: userid, provider: "JWT")
+            
+            delegate?.update(userProfile: userProfile, from: dictionary)
+            completion(.success(userProfile))
+        } catch {
+            // Authorization header did not contain a valid JWT
+            if (noTokenType) {
+                // No X-token-type header: Allow other plugins to attempt to authenticate the Authorization header
+                completion(.unprocessable(details: "No X-token-type header"))
+            } else {
+                Log.info("JWT can't be verified: \(error)")
+                completion(.failure(nil, nil))
+            }
+        }
+    }
 }
 
 // This extension is copied from Swift-JWT and provides the base64url encoding that a JWT

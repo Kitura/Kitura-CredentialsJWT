@@ -14,7 +14,7 @@ let package = Package(
         )
     ],
     dependencies: [
-        .package(url: "https://github.com/IBM-Swift/Kitura-Credentials.git", from: "2.4.0"),
+        .package(url: "https://github.com/IBM-Swift/Kitura-Credentials.git", from: "2.5.0"),
         .package(url: "https://github.com/IBM-Swift/Swift-JWT.git", from: "3.1.0"),
     ],
     targets: [

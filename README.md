@@ -1,16 +1,16 @@
 <p align="center">
-    <a href="http://kitura.io/">
-        <img src="https://raw.githubusercontent.com/IBM-Swift/Kitura/master/Sources/Kitura/resources/kitura-bird.svg?sanitize=true" height="100" alt="Kitura">
+    <a href="http://kitura.dev/">
+        <img src="https://raw.githubusercontent.com/Kitura/Kitura/master/Sources/Kitura/resources/kitura-bird.svg?sanitize=true" height="100" alt="Kitura">
     </a>
 </p>
 
 
 <p align="center">
-    <a href="http://www.kitura.io/">
-    <img src="https://img.shields.io/badge/docs-kitura.io-1FBCE4.svg" alt="Docs">
+    <a href="http://www.kitura.dev/">
+    <img src="https://img.shields.io/badge/docs-kitura.dev-1FBCE4.svg" alt="Docs">
     </a>
-    <a href="https://travis-ci.org/IBM-Swift/Kitura-CredentialsJWT">
-    <img src="https://travis-ci.org/IBM-Swift/Kitura-CredentialsJWT.svg?branch=master" alt="Build Status - Master">
+    <a href="https://travis-ci.org/Kitura/Kitura-CredentialsJWT">
+    <img src="https://travis-ci.org/Kitura/Kitura-CredentialsJWT.svg?branch=master" alt="Build Status - Master">
     </a>
     <img src="https://img.shields.io/badge/os-macOS-green.svg?style=flat" alt="macOS">
     <img src="https://img.shields.io/badge/os-linux-green.svg?style=flat" alt="Linux">
@@ -27,7 +27,7 @@ A package enabling Kitura to authenticate users using [JSON Web Tokens](https://
 ## Summary
 
 This package provides two facilities:
-- `CredentialsJWT`: A plugin for the [Kitura-Credentials](https://github.com/IBM-Swift/Kitura-Credentials) framework that supports JWT (token-based) authentication,
+- `CredentialsJWT`: A plugin for the [Kitura-Credentials](https://github.com/Kitura/Kitura-Credentials) framework that supports JWT (token-based) authentication,
 - A `TypeSafeMiddleware` extension for the `JWT` type, enabling it to be used as authentication for Codable routes.
 
 ## Swift version
@@ -37,10 +37,10 @@ The latest version of Kitura-CredentialsJWT requires **Swift 4.0** or newer. You
 
 #### Add dependencies
 
-Add the `Kitura-CredentialsJWT` dependency within your application’s `Package.swift` file. Substitute `"x.x.x"` with the latest `Kitura-CredentialsJWT` [release](https://github.com/IBM-Swift/Kitura-CredentialsJWT/releases).
+Add the `Kitura-CredentialsJWT` dependency within your application’s `Package.swift` file. Substitute `"x.x.x"` with the latest `Kitura-CredentialsJWT` [release](https://github.com/Kitura/Kitura-CredentialsJWT/releases).
 
 ```swift
-.package(url: "https://github.com/IBM-Swift/Kitura-CredentialsJWT.git", from: "x.x.x")
+.package(url: "https://github.com/Kitura/Kitura-CredentialsJWT.git", from: "x.x.x")
 ```
 
 Add `CredentialsJWT` to your target's dependencies:
@@ -60,7 +60,7 @@ This plugin requires that the following HTTP headers are present on a request:
 - `X-token-type`: must be `JWT`
 - `Authorization`: the JWT string, optionally prefixed with `Bearer`.
 
-The [Swift-JWT](https://github.com/IBM-Swift/Swift-JWT) library is used to decode the token supplied in the Authorization header. To successfully decode it, you must specify the `Claims` that will be present in the JWT.
+The [Swift-JWT](https://github.com/Kitura/Swift-JWT) library is used to decode the token supplied in the Authorization header. To successfully decode it, you must specify the `Claims` that will be present in the JWT.
 
 One claim (by default, `sub`) will be used to represent the identity of the bearer.  You can choose a different claim by supplying the `subject` option when creating an instance of CredentialsJWT, and you can further customize the resulting `UserProfile` by defining a `UserProfileDelegate`.
 
@@ -131,7 +131,7 @@ Following successful authentication, the `UserProfile` will be populated as foll
 
 ## Example of JWT authentication for Codable routes
 
-A Kitura Codable route can be authenticated using a JWT by using the `JWT<C: Claims>` type (defined by [Swift-JWT](https://github.com/IBM-Swift/Swift-JWT)) as a Type-Safe Middleware:
+A Kitura Codable route can be authenticated using a JWT by using the `JWT<C: Claims>` type (defined by [Swift-JWT](https://github.com/Kitura/Swift-JWT)) as a Type-Safe Middleware:
 
 ```swift
 import SwiftJWT

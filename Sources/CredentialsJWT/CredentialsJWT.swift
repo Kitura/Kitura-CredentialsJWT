@@ -32,7 +32,7 @@ import LoggerAPI
  If you wish to use multiple Credentials plugins, then additionally the header:
  - `X-token-type`: must equal `JWT`.
 
- The [Swift-JWT](https://github.com/IBM-Swift/Swift-JWT) library is used to
+ The [Swift-JWT](https://github.com/Kitura/Swift-JWT) library is used to
  decode JWT strings. To successfully decode it, you must specify the `Claims` that will
  be present in the JWT.  One claim (by default, `sub`) will be used to represent the identity of
  the bearer.  You can choose a different claim by supplying the `subject` option when
